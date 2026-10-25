@@ -13,16 +13,16 @@ extern "C" {
 #endif
 
 typedef enum {
-    LOCK_LEVEL_SYSTEM  = 0,
-    LOCK_LEVEL_NETWORK = 1,
-    LOCK_LEVEL_DATA    = 2,
-    LOCK_LEVEL_COUNT   = 3
+    COCIS_LOCK_LEVEL_SYSTEM  = 0,
+    COCIS_LOCK_LEVEL_NETWORK = 1,
+    COCIS_LOCK_LEVEL_DATA    = 2,
+    COCIS_LOCK_LEVEL_COUNT   = 3
 } cocis_lock_level_t;
 
-#define SYS_EVT_WIFI_CONNECTED    (1 << 0)
-#define SYS_EVT_MQTT_CONNECTED    (1 << 1)
-#define SYS_EVT_TIME_SYNCED       (1 << 2)
-#define SYS_EVT_EMERGENCY_ACTIVE  (1 << 3)
+#define COCIS_EVT_WIFI_CONNECTED    (1 << 0)
+#define COCIS_EVT_MQTT_CONNECTED    (1 << 1)
+#define COCIS_EVT_TIME_SYNCED       (1 << 2)
+#define COCIS_EVT_EMERGENCY_ACTIVE  (1 << 3)
 
 esp_err_t cocis_sync_init(void);
 

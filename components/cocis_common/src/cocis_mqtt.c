@@ -107,7 +107,7 @@ static void mqtt_task(void *arg)
                 s_sock = -1;
             }
             s_connected = false;
-            cocis_sync_event_clear(SYS_EVT_MQTT_CONNECTED);
+            cocis_sync_event_clear(COCIS_EVT_MQTT_CONNECTED);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -170,7 +170,7 @@ static void mqtt_task(void *arg)
             if (n == 4 && connack[0] == 0x20 && connack[3] == 0x00) {
                 s_sock = s;
                 s_connected = true;
-                cocis_sync_event_set(SYS_EVT_MQTT_CONNECTED);
+                cocis_sync_event_set(COCIS_EVT_MQTT_CONNECTED);
                 ESP_LOGI(TAG, "MQTT connected to %s:%d (Client: %s)",
                          CFG_MQTT_BROKER_HOST, CFG_MQTT_BROKER_PORT, s_client_id);
 
@@ -217,7 +217,7 @@ static void mqtt_task(void *arg)
             close(s_sock);
             s_sock = -1;
             s_connected = false;
-            cocis_sync_event_clear(SYS_EVT_MQTT_CONNECTED);
+            cocis_sync_event_clear(COCIS_EVT_MQTT_CONNECTED);
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -267,7 +267,7 @@ esp_err_t cocis_mqtt_publish(const char *topic, const char *payload)
         hdr_len = 5;
     }
 
-    if (cocis_sync_lock(LOCK_LEVEL_NETWORK, CFG_LOCK_TIMEOUT_MS) != ESP_OK) {
+    if (cocis_sync_lock(COCIS_LOCK_LEVEL_NETWORK, CFG_LOCK_TIMEOUT_MS) != ESP_OK) {
         return ESP_ERR_TIMEOUT;
     }
 
@@ -278,7 +278,7 @@ esp_err_t cocis_mqtt_publish(const char *topic, const char *payload)
         ret = ESP_FAIL;
     }
 
-    cocis_sync_unlock(LOCK_LEVEL_NETWORK);
+    cocis_sync_unlock(COCIS_LOCK_LEVEL_NETWORK);
     return ret;
 }
 

@@ -25,7 +25,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_connected = false;
-        cocis_sync_event_clear(SYS_EVT_WIFI_CONNECTED);
+        cocis_sync_event_clear(COCIS_EVT_WIFI_CONNECTED);
         s_retry_count++;
         uint32_t delay_ms = (s_retry_count > 5) ? 5000 : (500 * s_retry_count);
         ESP_LOGW(TAG, "Disconnected from AP, reconnecting in %lu ms...", (unsigned long)delay_ms);
@@ -36,7 +36,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         esp_ip4addr_ntoa(&event->ip_info.ip, s_ip_str, sizeof(s_ip_str));
         s_connected = true;
         s_retry_count = 0;
-        cocis_sync_event_set(SYS_EVT_WIFI_CONNECTED);
+        cocis_sync_event_set(COCIS_EVT_WIFI_CONNECTED);
         ESP_LOGI(TAG, "Station connected! IP: %s (SSID: %s)", s_ip_str, CFG_WIFI_SSID);
     }
 }

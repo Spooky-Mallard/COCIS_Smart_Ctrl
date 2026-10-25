@@ -155,16 +155,16 @@
     [ "bz1:2", "esp:D14", "purple", [ "h-30", "v-20" ] ],
     [ "bz1:1", "esp:GND.1", "black", [ "h-40", "v-10" ] ],
 
-    [ "btn_entry:1.l", "esp:VIN", "red", [ "h20", "v120" ] ],
+    [ "btn_entry:1.l", "esp:GND.2", "black", [ "h20", "v120" ] ],
     [ "btn_entry:2.l", "esp:D32", "green", [ "h40", "v100" ] ],
 
-    [ "btn_exit:1.l", "esp:VIN", "red", [ "h20", "v70" ] ],
+    [ "btn_exit:1.l", "esp:GND.2", "black", [ "h20", "v70" ] ],
     [ "btn_exit:2.l", "esp:D33", "blue", [ "h40", "v50" ] ],
 
-    [ "btn_deny:1.l", "esp:VIN", "red", [ "h20", "v120" ] ],
+    [ "btn_deny:1.l", "esp:GND.2", "black", [ "h20", "v120" ] ],
     [ "btn_deny:2.l", "esp:D27", "orange", [ "h30", "v100" ] ],
 
-    [ "btn_emerg:1.l", "esp:VIN", "red", [ "h20", "v70" ] ],
+    [ "btn_emerg:1.l", "esp:GND.2", "black", [ "h20", "v70" ] ],
     [ "btn_emerg:2.l", "esp:D26", "gold", [ "h30", "v50" ] ]
   ],
   "serialMonitor": {

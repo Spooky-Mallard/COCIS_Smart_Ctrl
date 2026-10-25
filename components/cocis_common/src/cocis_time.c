@@ -15,7 +15,7 @@ static void sntp_sync_cb(struct timeval *tv)
 {
     (void)tv;
     s_time_synced = true;
-    cocis_sync_event_set(SYS_EVT_TIME_SYNCED);
+    cocis_sync_event_set(COCIS_EVT_TIME_SYNCED);
     char buf[32];
     cocis_time_format_now(buf, sizeof(buf));
     ESP_LOGI(TAG, "SNTP synchronized network time: %s EAT", buf);
@@ -74,5 +74,5 @@ void cocis_time_set_epoch(int64_t epoch)
     };
     settimeofday(&tv, NULL);
     s_time_synced = true;
-    cocis_sync_event_set(SYS_EVT_TIME_SYNCED);
+    cocis_sync_event_set(COCIS_EVT_TIME_SYNCED);
 }

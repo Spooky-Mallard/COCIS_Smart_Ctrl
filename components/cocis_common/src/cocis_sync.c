@@ -3,7 +3,7 @@
 
 static const char *TAG = "cocis_sync";
 
-static SemaphoreHandle_t s_mutexes[LOCK_LEVEL_COUNT] = { NULL };
+static SemaphoreHandle_t s_mutexes[COCIS_LOCK_LEVEL_COUNT] = { NULL };
 static EventGroupHandle_t s_event_group = NULL;
 static bool s_initialized = false;
 
@@ -13,7 +13,7 @@ esp_err_t cocis_sync_init(void)
         return ESP_OK;
     }
 
-    for (int i = 0; i < LOCK_LEVEL_COUNT; i++) {
+    for (int i = 0; i < COCIS_LOCK_LEVEL_COUNT; i++) {
         s_mutexes[i] = xSemaphoreCreateMutex();
         if (!s_mutexes[i]) {
             ESP_LOGE(TAG, "Failed to create mutex level %d", i);
@@ -34,7 +34,7 @@ esp_err_t cocis_sync_init(void)
 
 esp_err_t cocis_sync_lock(cocis_lock_level_t level, uint32_t timeout_ms)
 {
-    if (!s_initialized || level >= LOCK_LEVEL_COUNT || !s_mutexes[level]) {
+    if (!s_initialized || level >= COCIS_LOCK_LEVEL_COUNT || !s_mutexes[level]) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -48,7 +48,7 @@ esp_err_t cocis_sync_lock(cocis_lock_level_t level, uint32_t timeout_ms)
 
 void cocis_sync_unlock(cocis_lock_level_t level)
 {
-    if (s_initialized && level < LOCK_LEVEL_COUNT && s_mutexes[level]) {
+    if (s_initialized && level < COCIS_LOCK_LEVEL_COUNT && s_mutexes[level]) {
         xSemaphoreGive(s_mutexes[level]);
     }
 }

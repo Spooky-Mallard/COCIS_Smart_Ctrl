@@ -40,11 +40,7 @@ static void rfid_task(void *arg)
             if ((now_ms - last_press_ms[gpio_num]) < CFG_RFID_DEBOUNCE_MS) {
                 continue;
             }
-            vTaskDelay(pdMS_TO_TICKS(20));
-            if (gpio_get_level((gpio_num_t)gpio_num) != 0) {
-                continue;
-            }
-            last_press_ms[gpio_num] = esp_timer_get_time() / 1000LL;
+            last_press_ms[gpio_num] = now_ms;
 
             if (gpio_num == PIN_BTN_EMERGENCY) {
                 if (s_emerg_cb != NULL) {

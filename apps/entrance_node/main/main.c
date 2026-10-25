@@ -14,6 +14,8 @@
 #include "cocis_health.h"
 
 #include "board_pins.h"
+#include "sync.h"
+#include "time_sync.h"
 #include "display.h"
 #include "buzzer.h"
 #include "door.h"
@@ -48,8 +50,10 @@ void app_main(void)
         nvs_flash_init();
     }
 
+    sync_init();
     cocis_sync_init();
     cocis_crypto_init();
+    time_sync_init();
     cocis_time_init();
     cocis_health_init(NODE_ID_ENTRANCE);
     config_init();

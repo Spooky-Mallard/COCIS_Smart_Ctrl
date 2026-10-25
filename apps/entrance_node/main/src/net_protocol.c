@@ -12,6 +12,7 @@
 #include "cocis_sync.h"
 #include "logger.h"
 #include "occupancy_ledger.h"
+#include "display.h"
 
 static const char *TAG = "ENTRANCE_PROTO";
 
@@ -61,8 +62,16 @@ static void on_room_telemetry(const char *topic, const char *payload)
                      (unsigned)pkt.occupied, (unsigned)pkt.light_state, (unsigned long)pkt.light_on_sec);
             logger_log_lighting(rid, detail, (int32_t)pkt.energy_saved_mwh);
 
-            ESP_LOGI(TAG, "Recorded telemetry from Room %u: Occ=%u Light=%u EnergySaved=%lu mWh",
-                     rid, (unsigned)pkt.occupied, (unsigned)pkt.light_state, (unsigned long)pkt.energy_saved_mwh);
+            char l0[17], l1[17];
+            snprintf(l0, sizeof(l0), "ROOM %u UPDATE!", rid);
+            snprintf(l1, sizeof(l1), "R%u:%s L%u:%s",
+                     rid, pkt.occupied ? "OCC" : "VAC",
+                     rid, (pkt.light_state != 0) ? "ON " : "OFF");
+            display_show_alert(l0, l1, 2500);
+
+            ESP_LOGI(TAG, ">> [INGRESS FROM ROOM %u] Occupancy=%s | Lighting=%s | Saved=%lu mWh",
+                     rid, pkt.occupied ? "OCCUPIED" : "VACANT",
+                     (pkt.light_state != 0) ? "ON" : "OFF", (unsigned long)pkt.energy_saved_mwh);
         }
 
         /* Send ACK back to the room */
@@ -103,9 +112,13 @@ esp_err_t net_protocol_init(void)
     s_rooms[2].name = "Lecture Room 2";
     s_rooms[2].heartbeat_healthy = false;
 
-    /* Subscribe to all room telemetry topics */
-    char sub_pattern[64];
+    /* Subscribe to all room telemetry topics (both explicit and wildcard) */
+    char sub_pattern[64], sub_r1[64], sub_r2[64];
     snprintf(sub_pattern, sizeof(sub_pattern), "%s/room/+/telemetry", CFG_MQTT_TOPIC_PREFIX);
+    snprintf(sub_r1, sizeof(sub_r1), "%s/room/1/telemetry", CFG_MQTT_TOPIC_PREFIX);
+    snprintf(sub_r2, sizeof(sub_r2), "%s/room/2/telemetry", CFG_MQTT_TOPIC_PREFIX);
+    cocis_mqtt_subscribe(sub_r1, on_room_telemetry);
+    cocis_mqtt_subscribe(sub_r2, on_room_telemetry);
     cocis_mqtt_subscribe(sub_pattern, on_room_telemetry);
 
     s_initialized = true;

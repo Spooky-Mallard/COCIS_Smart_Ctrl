@@ -72,24 +72,48 @@ static esp_err_t mqtt_subscribe_remote(const char *topic)
     return ESP_FAIL;
 }
 
+static bool topic_matches(const char *sub, const char *topic)
+{
+    if (!sub || !topic) {
+        return false;
+    }
+    if (strcmp(sub, topic) == 0) {
+        return true;
+    }
+
+    /* Multi-level wildcard '#' */
+    const char *hash = strstr(sub, "/#");
+    if (hash) {
+        size_t prefix_len = (size_t)(hash - sub);
+        if (strncmp(sub, topic, prefix_len) == 0) {
+            return true;
+        }
+    }
+
+    /* Single-level wildcard '+' */
+    const char *plus = strstr(sub, "/+");
+    if (plus) {
+        size_t prefix_len = (size_t)(plus - sub);
+        if (strncmp(sub, topic, prefix_len) != 0) {
+            return false;
+        }
+        const char *sub_suffix = plus + 2;
+        if (*sub_suffix == '\0') {
+            return true;
+        }
+        const char *topic_rem = topic + prefix_len + 1;
+        const char *next_slash = strchr(topic_rem, '/');
+        if (next_slash && strcmp(next_slash, sub_suffix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void mqtt_dispatch_publish(const char *topic, const char *payload)
 {
     for (size_t i = 0; i < s_sub_count; i++) {
-        /* Simple match or wildcard # */
-        bool match = false;
-        if (strcmp(s_subs[i].topic, topic) == 0) {
-            match = true;
-        } else if (strstr(s_subs[i].topic, "/#")) {
-            size_t prefix_len = strlen(s_subs[i].topic) - 2;
-            if (strncmp(s_subs[i].topic, topic, prefix_len) == 0) {
-                match = true;
-            }
-        } else if (strstr(s_subs[i].topic, "/+")) {
-            /* Single-level wildcard match */
-            match = true;
-        }
-
-        if (match && s_subs[i].cb) {
+        if (topic_matches(s_subs[i].topic, topic) && s_subs[i].cb) {
             s_subs[i].cb(topic, payload);
         }
     }
@@ -189,28 +213,61 @@ static void mqtt_task(void *arg)
         /* Read incoming frames */
         int r = recv(s_sock, rx_buf, sizeof(rx_buf) - 1, 0);
         if (r > 0) {
+            rx_buf[r] = '\0';
             uint8_t pkt_type = rx_buf[0] & 0xF0;
-            if (pkt_type == 0x30) { /* PUBLISH QoS 0 */
-                /* Parse topic */
-                if (r > 4) {
-                    uint16_t tlen = ((uint16_t)rx_buf[2] << 8) | rx_buf[3];
-                    if (4 + tlen < r) {
+            if (pkt_type == 0x30) { /* PUBLISH */
+                /* Decode remaining length (variable length integer, 1-4 bytes) */
+                size_t idx = 1;
+                uint32_t rem_len = 0;
+                uint32_t multiplier = 1;
+                uint8_t encoded_byte = 0;
+                do {
+                    if (idx >= (size_t)r) break;
+                    encoded_byte = rx_buf[idx++];
+                    rem_len += (encoded_byte & 0x7F) * multiplier;
+                    multiplier *= 128;
+                } while ((encoded_byte & 0x80) != 0 && idx <= 4);
+
+                /* Drain rest of packet from socket if split across TCP reads */
+                size_t total_needed = idx + rem_len;
+                while ((size_t)r < total_needed && (size_t)r < sizeof(rx_buf) - 1) {
+                    int extra = recv(s_sock, rx_buf + r, sizeof(rx_buf) - 1 - r, 0);
+                    if (extra <= 0) break;
+                    r += extra;
+                    rx_buf[r] = '\0';
+                }
+
+                /* Variable header: topic length (2 bytes) */
+                if (idx + 2 <= (size_t)r) {
+                    uint16_t tlen = ((uint16_t)rx_buf[idx] << 8) | rx_buf[idx + 1];
+                    idx += 2;
+                    if (idx + tlen <= (size_t)r) {
                         char topic[64];
                         size_t cpy_tlen = (tlen < sizeof(topic) - 1) ? tlen : (sizeof(topic) - 1);
-                        memcpy(topic, &rx_buf[4], cpy_tlen);
+                        memcpy(topic, &rx_buf[idx], cpy_tlen);
                         topic[cpy_tlen] = '\0';
+                        idx += tlen;
 
-                        size_t payload_len = r - (4 + tlen);
+                        /* If QoS > 0, 2-byte Packet Identifier follows */
+                        uint8_t qos = (rx_buf[0] & 0x06) >> 1;
+                        if (qos > 0 && idx + 2 <= (size_t)r) {
+                            idx += 2;
+                        }
+
+                        size_t payload_len = (idx <= (size_t)r) ? ((size_t)r - idx) : 0;
                         char payload[512];
                         size_t cpy_plen = (payload_len < sizeof(payload) - 1) ? payload_len : (sizeof(payload) - 1);
-                        memcpy(payload, &rx_buf[4 + tlen], cpy_plen);
+                        if (cpy_plen > 0) {
+                            memcpy(payload, &rx_buf[idx], cpy_plen);
+                        }
                         payload[cpy_plen] = '\0';
 
+                        ESP_LOGI(TAG, "MQTT Rx: topic='%s' payload_len=%u", topic, (unsigned)cpy_plen);
                         mqtt_dispatch_publish(topic, payload);
                     }
                 }
             } else if (pkt_type == 0x90) {
-                /* SUBACK received */
+                ESP_LOGD(TAG, "SUBACK received from broker");
             }
         } else if (r == 0) {
             ESP_LOGW(TAG, "Broker closed connection");

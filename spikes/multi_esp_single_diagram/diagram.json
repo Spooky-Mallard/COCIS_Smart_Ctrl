@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "author": "Matthew Mumbere",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp0",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led0",
+      "top": -90,
+      "left": 100,
+      "attrs": { "color": "green", "label": "ESP0 (ENTRANCE 00)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r0",
+      "top": -40,
+      "left": 100,
+      "attrs": { "value": "220" }
+    },
+
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp1",
+      "top": 0,
+      "left": 360,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -90,
+      "left": 460,
+      "attrs": { "color": "yellow", "label": "ESP1 (ROOM 1 01)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -40,
+      "left": 460,
+      "attrs": { "value": "220" }
+    },
+
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp2",
+      "top": 0,
+      "left": 720,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": -90,
+      "left": 820,
+      "attrs": { "color": "blue", "label": "ESP2 (ROOM 2 10)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": -40,
+      "left": 820,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp0:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp0:RX0", "$serialMonitor:TX", "", [] ],
+
+    [ "esp0:D34", "esp0:GND.1", "black", [ "v-20", "h-20" ] ],
+    [ "esp0:D35", "esp0:GND.1", "black", [ "v-15", "h-15" ] ],
+    [ "esp0:D2", "led0:A", "green", [ "v-50", "h40" ] ],
+    [ "led0:C", "r0:1", "black", [ "v10" ] ],
+    [ "r0:2", "esp0:GND.1", "black", [ "v30", "h-40" ] ],
+
+    [ "esp1:D34", "esp1:GND.1", "black", [ "v-20", "h-20" ] ],
+    [ "esp1:D35", "esp1:3V3", "red", [ "v-30", "h40" ] ],
+    [ "esp1:D2", "led1:A", "gold", [ "v-50", "h40" ] ],
+    [ "led1:C", "r1:1", "black", [ "v10" ] ],
+    [ "r1:2", "esp1:GND.1", "black", [ "v30", "h-40" ] ],
+
+    [ "esp2:D34", "esp2:3V3", "red", [ "v-30", "h40" ] ],
+    [ "esp2:D35", "esp2:GND.1", "black", [ "v-15", "h-15" ] ],
+    [ "esp2:D2", "led2:A", "blue", [ "v-50", "h40" ] ],
+    [ "led2:C", "r2:1", "black", [ "v10" ] ],
+    [ "r2:2", "esp2:GND.1", "black", [ "v30", "h-40" ] ],
+
+    [ "esp1:D18", "esp0:D18", "orange", [ "v60", "h-360" ] ],
+    [ "esp2:D19", "esp0:D19", "purple", [ "v80", "h-720" ] ]
+  ],
+  "serialMonitor": {
+    "display": "terminal"
+  }
+}

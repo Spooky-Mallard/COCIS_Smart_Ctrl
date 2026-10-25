@@ -54,7 +54,26 @@ flowchart TB
 
 ---
 
-### 2.2 Configurable Access Schedule & The "Exit Outside Authorized Hours" Safety Dilemma
+### 2.3 Empirical Verification: Can Multiple ESP32s Run in a Single Wokwi `diagram.json`?
+
+#### The Hypothesis
+To avoid managing multiple project directories, we tested whether Wokwi allows declaring three `wokwi-esp32-devkit-v1` parts (`esp0`, `esp1`, `esp2`) in a single `diagram.json`, flashing a single unified firmware binary, and using hardware strapping pins (`GPIO 34` and `GPIO 35`) to dynamically branch each MCU into its designated role:
+- `00` (`GPIO 34=0`, `GPIO 35=0`) -> `NODE_ENTRANCE`
+- `01` (`GPIO 34=0`, `GPIO 35=1`) -> `NODE_ROOM_1`
+- `10` (`GPIO 34=1`, `GPIO 35=0`) -> `NODE_ROOM_2`
+
+#### The Test Spike (`spikes/multi_esp_single_diagram/`)
+We constructed a standalone test with:
+1. `diagram.json` containing 3 ESP32 boards with strapping pins hardwired to GND and 3V3, each with an LED on GPIO 2 blinking at a role-specific frequency (1 Hz, 2 Hz, 4 Hz).
+2. Firmware reading `GPIO 34` and `GPIO 35` at boot and pulsing inter-chip lines (`GPIO 18` and `GPIO 19`).
+3. Execution in Wokwi for VS Code.
+
+#### Empirical Result
+- **Observation:** When the simulation started, only `esp0` booted (`Derived Node Role: 0x00 -> NODE_ENTRANCE (00)`). The simulator reported that multi-MCU execution in a single diagram is not supported/restricted to one active MCU target, and `esp1` and `esp2` remained completely unpowered with their LEDs off.
+- **Architectural Conclusion:** Wokwi simulator engine natively enforces a single microcontroller per simulation diagram.
+- **Consequent Architecture:** The 3-node distributed system must be architected as three separate standalone application projects (`apps/entrance_node`, `apps/room1_node`, `apps/room2_node`) sharing a common library component (`components/cocis_common`). Each node runs in its own simulation instance and communicates with the others over simulated Wi-Fi (`Wokwi-GUEST`) via a public/local MQTT broker.
+
+---
 
 #### The Requirement
 Section 1.6 of the coursework specification states:

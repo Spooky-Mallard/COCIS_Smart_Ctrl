@@ -28,6 +28,8 @@ static int s_sock = -1;
 static bool s_connected = false;
 static node_id_t s_my_node_id = NODE_ID_ENTRANCE;
 static char s_client_id[32] = { 0 };
+static uint8_t s_rx_buf[1024];
+static char s_rx_payload[512];
 
 static esp_err_t mqtt_send_bytes(const uint8_t *data, size_t len)
 {
@@ -122,7 +124,6 @@ static void mqtt_dispatch_publish(const char *topic, const char *payload)
 static void mqtt_task(void *arg)
 {
     (void)arg;
-    uint8_t rx_buf[1024];
 
     while (1) {
         if (!cocis_wifi_is_connected()) {
@@ -211,10 +212,10 @@ static void mqtt_task(void *arg)
         }
 
         /* Read incoming frames */
-        int r = recv(s_sock, rx_buf, sizeof(rx_buf) - 1, 0);
+        int r = recv(s_sock, s_rx_buf, sizeof(s_rx_buf) - 1, 0);
         if (r > 0) {
-            rx_buf[r] = '\0';
-            uint8_t pkt_type = rx_buf[0] & 0xF0;
+            s_rx_buf[r] = '\0';
+            uint8_t pkt_type = s_rx_buf[0] & 0xF0;
             if (pkt_type == 0x30) { /* PUBLISH */
                 /* Decode remaining length (variable length integer, 1-4 bytes) */
                 size_t idx = 1;
@@ -223,47 +224,46 @@ static void mqtt_task(void *arg)
                 uint8_t encoded_byte = 0;
                 do {
                     if (idx >= (size_t)r) break;
-                    encoded_byte = rx_buf[idx++];
+                    encoded_byte = s_rx_buf[idx++];
                     rem_len += (encoded_byte & 0x7F) * multiplier;
                     multiplier *= 128;
                 } while ((encoded_byte & 0x80) != 0 && idx <= 4);
 
                 /* Drain rest of packet from socket if split across TCP reads */
                 size_t total_needed = idx + rem_len;
-                while ((size_t)r < total_needed && (size_t)r < sizeof(rx_buf) - 1) {
-                    int extra = recv(s_sock, rx_buf + r, sizeof(rx_buf) - 1 - r, 0);
+                while ((size_t)r < total_needed && (size_t)r < sizeof(s_rx_buf) - 1) {
+                    int extra = recv(s_sock, s_rx_buf + r, sizeof(s_rx_buf) - 1 - r, 0);
                     if (extra <= 0) break;
                     r += extra;
-                    rx_buf[r] = '\0';
+                    s_rx_buf[r] = '\0';
                 }
 
                 /* Variable header: topic length (2 bytes) */
                 if (idx + 2 <= (size_t)r) {
-                    uint16_t tlen = ((uint16_t)rx_buf[idx] << 8) | rx_buf[idx + 1];
+                    uint16_t tlen = ((uint16_t)s_rx_buf[idx] << 8) | s_rx_buf[idx + 1];
                     idx += 2;
                     if (idx + tlen <= (size_t)r) {
                         char topic[64];
                         size_t cpy_tlen = (tlen < sizeof(topic) - 1) ? tlen : (sizeof(topic) - 1);
-                        memcpy(topic, &rx_buf[idx], cpy_tlen);
+                        memcpy(topic, &s_rx_buf[idx], cpy_tlen);
                         topic[cpy_tlen] = '\0';
                         idx += tlen;
 
                         /* If QoS > 0, 2-byte Packet Identifier follows */
-                        uint8_t qos = (rx_buf[0] & 0x06) >> 1;
+                        uint8_t qos = (s_rx_buf[0] & 0x06) >> 1;
                         if (qos > 0 && idx + 2 <= (size_t)r) {
                             idx += 2;
                         }
 
                         size_t payload_len = (idx <= (size_t)r) ? ((size_t)r - idx) : 0;
-                        char payload[512];
-                        size_t cpy_plen = (payload_len < sizeof(payload) - 1) ? payload_len : (sizeof(payload) - 1);
+                        size_t cpy_plen = (payload_len < sizeof(s_rx_payload) - 1) ? payload_len : (sizeof(s_rx_payload) - 1);
                         if (cpy_plen > 0) {
-                            memcpy(payload, &rx_buf[idx], cpy_plen);
+                            memcpy(s_rx_payload, &s_rx_buf[idx], cpy_plen);
                         }
-                        payload[cpy_plen] = '\0';
+                        s_rx_payload[cpy_plen] = '\0';
 
                         ESP_LOGI(TAG, "MQTT Rx: topic='%s' payload_len=%u", topic, (unsigned)cpy_plen);
-                        mqtt_dispatch_publish(topic, payload);
+                        mqtt_dispatch_publish(topic, s_rx_payload);
                     }
                 }
             } else if (pkt_type == 0x90) {
@@ -287,7 +287,7 @@ esp_err_t cocis_mqtt_init(node_id_t my_node_id)
     snprintf(s_client_id, sizeof(s_client_id), "cocis_node_%u_%04lx",
              (unsigned)my_node_id, (unsigned long)(esp_random() & 0xFFFF));
 
-    xTaskCreate(mqtt_task, "cocis_mqtt", 4096, NULL, 5, NULL);
+    xTaskCreate(mqtt_task, "cocis_mqtt", 10240, NULL, 5, NULL);
     ESP_LOGI(TAG, "MQTT subsystem task spawned");
     return ESP_OK;
 }

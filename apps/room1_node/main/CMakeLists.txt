@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "src/pir_sensor.c"
+        "src/light.c"
+        "src/room_buffer.c"
+        "src/room_cli.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        cocis_common
+        esp_driver_gpio
+        esp_driver_uart
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        lwip
+        mbedtls
+        esp_timer
+)

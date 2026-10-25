@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "author": "Matthew Mumbere",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pir-motion-sensor",
+      "id": "pir1",
+      "top": -120,
+      "left": -180,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_room1",
+      "top": -90,
+      "left": 180,
+      "attrs": { "color": "yellow", "label": "ROOM 1 LIGHT (RELAY)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_light",
+      "top": -40,
+      "left": 180,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_status",
+      "top": 50,
+      "left": 180,
+      "attrs": { "color": "green", "label": "STATUS (HEARTBEAT)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_status",
+      "top": 100,
+      "left": 180,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+
+    [ "pir1:VCC", "esp:VIN", "red", [ "v-30", "h120" ] ],
+    [ "pir1:GND", "esp:GND.1", "black", [ "v-20", "h100" ] ],
+    [ "pir1:OUT", "esp:D27", "orange", [ "v-40", "h140" ] ],
+
+    [ "esp:D12", "led_room1:A", "gold", [ "v-50", "h40" ] ],
+    [ "led_room1:C", "r_light:1", "black", [ "v10" ] ],
+    [ "r_light:2", "esp:GND.1", "black", [ "v30", "h-40" ] ],
+
+    [ "esp:D2", "led_status:A", "green", [ "h40" ] ],
+    [ "led_status:C", "r_status:1", "black", [ "v10" ] ],
+    [ "r_status:2", "esp:GND.1", "black", [ "v30", "h-40" ] ]
+  ],
+  "serialMonitor": {
+    "display": "terminal"
+  }
+}

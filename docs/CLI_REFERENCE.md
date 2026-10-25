@@ -1,110 +1,114 @@
-# Serial Command-Line Interface Reference (`CLI_REFERENCE.md`)
+# Serial CLI Reference Manual
 
-**Project:** CoCIS Smart Control and Monitoring System (Makerere University)  
-**Interface:** UART0 (`115200 8N1`) via Wokwi Serial Monitor (`$serialMonitor`)  
-**Prompt:** `cocis> ` (or `cocis(admin)# ` when authenticated as Administrator)
-
----
-
-## 1. Command Summary Table
-
-| Category | Command Syntax | Auth Required? | Description |
-| :--- | :--- | :---: | :--- |
-| **General** | `help` | No | Print categorized command reference table |
-| **Monitoring** | `status` | No | Show system overview (Time, Mode, Schedule, Headcount, SD, Wi-Fi, Auth) |
-| **Monitoring** | `inside` / `occupancy` | No | List every person currently inside CoCIS with role, entry time, and duration |
-| **Monitoring** | `rooms` / `lights` | No | Show Lecture Room 1 & Room 2 occupancy, light FSM state, timeouts, and energy saved |
-| **Monitoring** | `log [n]` | No | Display the most recent `n` (default `15`) hash-chained access/system log records |
-| **Monitoring** | `log user <uid>` | No | Filter and display all access history records for a specific RFID tag `<uid>` |
-| **Monitoring** | `stats` | No | Show access grant/deny counters by reason, peak occupancy, and energy savings |
-| **Monitoring** | `nodes` | No | Show distributed terminal health (`NODE_ENTRANCE`, `NODE_ROOM_1`, `NODE_ROOM_2`), seq IDs, heartbeats, and store-and-forward buffer counts |
-| **Monitoring** | `daily_report` | No | Generate a comprehensive daily executive report for CoCIS management |
-| **Admin Auth** | `login <user> <pass> [uid]` | No | Authenticate an admin session (salted SHA-256 + optional 2FA Admin RFID UID) |
-| **Admin Auth** | `logout` | Yes | Terminate current administrator session immediately |
-| **Admin Auth** | `passwd <old> <new>` | Yes | Change administrator password (re-salts and stores new SHA-256 digest in NVS) |
-| **Schedule** | `schedule show` | No | Display weekly authorized building access windows (`Mon`–`Sun`) and override states |
-| **Schedule** | `schedule set <day\|all> <HH:MM> <HH:MM>` | **Yes (Admin)** | Configure authorized open/close time window (e.g., `schedule set mon 07:00 21:00`) |
-| **Schedule** | `schedule close <day>` | **Yes (Admin)** | Mark an entire day of the week as closed (`00:00–00:00`, disabled) |
-| **Safety/Egress**| `override_exit <uid>` | **Yes (Admin)** | Grant a 5-minute supervisor safe-exit pass for `<uid>` to exit after closing hours |
-| **Safety/Egress**| `emergency <on\|off>` | **Yes (Admin)** | Activate/clear building-wide Emergency Evacuation Mode and print roll-call list |
-| **User Mgmt** | `user list` | No | List all enrolled RFID tags, names, roles, active flags, andinside status |
-| **User Mgmt** | `user add <uid> <role> <name>` | **Yes (Admin)** | Enroll a new RFID tag (`admin`, `staff`, `student`, `visitor`) |
-| **User Mgmt** | `user del <uid>` | **Yes (Admin)** | Remove an enrolled RFID user from `user_db` |
-| **User Mgmt** | `user enable <uid>` | **Yes (Admin)** | Activate a disabled user tag |
-| **User Mgmt** | `user disable <uid>` | **Yes (Admin)** | Deactivate/revoke a user tag without deleting its history |
-| **Storage/Time** | `sd status` | No | Show SPI microSD mount status, CSV file sizes, and hash-chain tip |
-| **Storage/Time** | `sd verify` | No | Recompute SHA-256 hash chain across SD logs to detect any tampering |
-| **Storage/Time** | `sd format` | **Yes (Admin)** | Format/reset SD CSV log files and re-initialize genesis hash chain |
-| **Storage/Time** | `time [set YYYY-MM-DD HH:MM:SS]` | **Set: Admin** | Show current East Africa Time (`EAT`) or manually set the system wall clock |
-| **Simulation** | `sim scan <entry\|exit> <uid>` | No | Inject an RFID scan at the Entry or Exit reader |
-| **Simulation** | `sim motion <1\|2> <on\|off>` | No | Simulate PIR motion state in Lecture Room 1 or Lecture Room 2 |
-| **Simulation** | `sim node <1\|2> <online\|offline>` | No | Disconnect/reconnect a lecture room terminal to test store-and-forward replay |
-| **Simulation** | `sim door_hold <entry\|exit>` | No | Simulate a door propped/forced open beyond threshold to trigger tailgate alarm |
-| **Simulation** | `sim selftest` | No | Run the automated 10-scenario end-to-end verification suite |
+**Project:** CoCIS Smart Control and Monitoring System (Makerere University, BSE III & CS II 2026/2027)  
+**Interfaces:** Entrance Hub Management Console & Lecture Room Diagnostic Terminals
 
 ---
 
-## 2. Pre-Enrolled Default CoCIS RFID Database & Admin Credentials
+## 1. Entrance Hub Management Console (`apps/entrance_node`)
 
-### Default Admin Serial CLI Login
-- **Username:** `admin`
-- **Password:** `Cocis@2026`
-- **Optional 2FA Admin RFID Tag:** `04A00001`
+Connected to Entrance Node UART0 (`TX: GPIO 1`, `RX: GPIO 3`, 115200 baud).
 
-### Pre-Enrolled RFID Tags (`user list`)
+### 1.1 Main Interactive Menu
+```
+============================================================
+ CoCIS Smart Control System - Main Entrance Coordinator
+============================================================
+ [1] View Access Logs (from SD Card)
+ [2] View Current Building Occupancy (Who is inside)
+ [3] View Lecture Room Status (Room 1 & Room 2 live state)
+ [4] Configure Building Access Schedule (Requires Admin PIN/Tag)
+ [5] Override Lecture Room Lighting (ON / OFF / AUTO)
+ [6] Emergency Door Release (Manual unlock override)
+ [7] System Health & Network Telemetry (All nodes RSSI, IP, Latency)
+ [8] Run Automated Multi-Node Verification Suite
+ [0] Refresh Menu
+============================================================
+Enter option [0-8]:
+```
 
-| RFID Tag UID | Name | Role | Active? | Notes |
-| :--- | :--- | :--- | :---: | :--- |
-| `04A00001` | `Prof. Tonny Oyana` | `ADMIN` | `YES` | CoCIS Principal / Security Admin (can exit after hours) |
-| `04A1B2C3` | `Matthew Mumbere` | `STUDENT` | `YES` | Bound to **Green Entry Button** & **Blue Exit Button** on Wokwi canvas |
-| `04B2C3D4` | `Dr. Engineer Bainomugisha` | `STAFF` | `YES` | Senior Lecturer |
-| `04C3D4E5` | `Sarah Namukasa` | `STUDENT` | `YES` | BSE III Student |
-| `04D4E5F6` | `David Okello` | `STUDENT` | `YES` | CS II Student |
-| `04E5F607` | `Grace Atim` | `STAFF` | `YES` | Lab Technologist |
-| `04V10008` | `External Examiner` | `VISITOR` | `YES` | Temporary Visitor Badge (24-hour validity window) |
-| `0499DEAD` | `Suspended Account` | `STUDENT` | `NO` | Inactive / revoked tag (triggers `DENY_USER_INACTIVE`) |
-| `DEADBEEF` | *(Unenrolled)* | *(None)* | — | Bound to **Red Intruder Button** on Wokwi canvas (`DENY_UNKNOWN_TAG`) |
+### 1.2 Menu Explanations & Commands
+
+#### Option [1] / `logs [count]`: View Access Logs
+Reads the latest append-only access events from `/sdcard/access.csv`:
+```
+[LOG REPLAY] Last 5 Access Events:
+  1. 2026-10-25 08:32:10 EAT | UID: 04A1B2C3 | Dr. John Bosco  | ENTRY_GRANTED | PASS: None
+  2. 2026-10-25 08:34:45 EAT | UID: 04B2C3D4 | Sarah Nabatanzi | ENTRY_GRANTED | PASS: None
+  3. 2026-10-25 08:40:12 EAT | UID: DEADBEEF | UNREGISTERED    | ENTRY_DENIED  | REASON: Invalid Tag
+```
+
+#### Option [2] / `occupancy`: View Current Building Occupancy
+Displays real-time headcount and the authoritative "who is inside" ledger:
+```
+========================================================================
+                      CURRENT BUILDING OCCUPANCY
+========================================================================
+ Total Headcount Inside: 2 persons
+------------------------------------------------------------------------
+ UID       | Name                 | Role       | Entry Time   | Duration
+------------------------------------------------------------------------
+ 04A1B2C3  | Dr. John Bosco       | FACULTY    | 08:32:10 EAT | 00h 14m
+ 04B2C3D4  | Sarah Nabatanzi      | STUDENT    | 08:34:45 EAT | 00h 11m
+========================================================================
+```
+
+#### Option [3] / `rooms`: View Lecture Room Status
+Queries live telemetry received over MQTT from Room 1 and Room 2:
+```
+===================================================================================
+                       LECTURE ROOM LIVE TELEMETRY
+===================================================================================
+ Room | State     | PIR Motion | Light Relay | Energy Saved | Heartbeat | Last Seen
+-----------------------------------------------------------------------------------
+ 1    | ON_ACTIVE | DETECTED   | ON          | 120 mWh      | HEALTHY   | 2s ago
+ 2    | VACANT    | IDLE       | OFF         | 480 mWh      | HEALTHY   | 1s ago
+===================================================================================
+```
+
+#### Option [4] / `schedule`: Configure Access Schedule
+Requires authenticated administrator login (`login admin Cocis@2026`):
+```
+cocis(admin)# schedule set 1 08:00 21:00
+OK: Monday schedule updated: Permitted access between 08:00 and 21:00 EAT
+```
+
+#### Option [5] / `override_light <room_id> <on|off|auto>`: Lighting Override
+Sends remote override command over MQTT:
+- `override_light 1 on`: Forces Room 1 lighting relay ON regardless of motion.
+- `override_light 1 off`: Forces Room 1 lighting relay OFF.
+- `override_light 1 auto`: Releases Room 1 back to autonomous PIR FSM control.
+
+#### Option [6] / `door <entry|exit> unlock`: Manual Door Release
+Actuates door servo for 3000 ms with audit logging.
+
+#### Option [7] / `status`: System Health & Network Telemetry
+Displays node statuses, Wi-Fi IP, and MQTT broker connectivity:
+```
+============================================================
+              SYSTEM HEALTH & NETWORK TELEMETRY
+============================================================
+ Node 0 (Hub):    ONLINE  | IP: 10.13.37.2 | RSSI: -55 dBm
+ Node 1 (Room 1): HEALTHY | Last Ack: 104  | Latency: <1s
+ Node 2 (Room 2): HEALTHY | Last Ack: 82   | Latency: <1s
+ MQTT Broker:     CONNECTED to broker.hivemq.com:1883
+ Free Heap:       294,180 bytes | Uptime: 345s
+============================================================
+```
+
+#### Option [8] / `sim selftest`: Automated Verification Demo
+Executes the comprehensive 10-scenario coursework test suite across access control, anti-passback, smart lighting, store-and-forward buffering, and tamper defense.
 
 ---
 
-## 3. Example Command Outputs
+## 2. Lecture Room Diagnostic Console (`apps/room1_node`, `apps/room2_node`)
 
-### `status`
-```text
-========================================================================
-          CoCIS SMART CONTROL & MONITORING SYSTEM - STATUS
-========================================================================
- System Clock (EAT) : 2026-10-24 08:35:12 (SAT) [VALID - RTC+SNTP]
- Building Schedule  : OPEN (Today's Window: 08:00 - 17:00)
- Emergency Mode     : NORMAL OPERATION
- Live Occupancy     : 2 person(s) currently inside (Peak today: 3)
- Entry Door         : CLOSED (Locked)   | Exit Door : CLOSED (Locked)
- Lecture Room 1     : OCCUPIED          | Light 1   : ON (Active)
- Lecture Room 2     : VACANT            | Light 2   : OFF (Saved 142 mWh)
- SD Card Storage    : MOUNTED (/sdcard) | Hash Chain: 8F3A19C4 (Verified)
- Network / Nodes    : 3/3 Nodes ONLINE  | Wi-Fi     : CONNECTED (Wokwi-GUEST)
- Admin CLI Session  : AUTHENTICATED (admin, auto-logout in 284s)
-========================================================================
-```
+Connected to Room Node UART0 (`TX: GPIO 1`, `RX: GPIO 3`, 115200 baud).
 
-### `inside`
-```text
-+----------+----------+------------------------+---------+---------------------+----------+
-| Slot     | Tag UID  | Full Name              | Role    | Entry Time (EAT)    | Duration |
-+----------+----------+------------------------+---------+---------------------+----------+
-| 01       | 04A1B2C3 | Matthew Mumbere        | STUDENT | 2026-10-24 08:31:04 | 00:04:08 |
-| 02       | 04B2C3D4 | Dr. Eng. Bainomugisha  | STAFF   | 2026-10-24 08:32:50 | 00:02:22 |
-+----------+----------+------------------------+---------+---------------------+----------+
-Total Currently Inside CoCIS: 2 person(s)
-```
-
-### `rooms`
-```text
-+--------+----------+---------------+------------+-------------+--------------+--------------+
-| Room   | Node St. | PIR Motion    | Light FSM  | Vacancy Tmr | Light On (s) | Energy Saved |
-+--------+----------+---------------+------------+-------------+--------------+--------------+
-| Room 1 | ONLINE   | MOTION ACTIVE | ON_ACTIVE  | 15s / 15s   | 124 s        | 210 mWh      |
-| Room 2 | ONLINE   | IDLE          | OFF_VACANT | 0s / 15s    | 45 s         | 485 mWh      |
-+--------+----------+---------------+------------+-------------+--------------+--------------+
-Estimated Building Electricity Saved: 695 mWh (UGX 2,780 equivalent scaled pilot)
-```
+### Commands
+| Command | Arguments | Description |
+| :--- | :--- | :--- |
+| `status` | None | Prints local PIR input, light relay state, store-and-forward queue depth, uptime, and Wi-Fi RSSI |
+| `motion` | None | Injects simulated PIR motion detection to test autonomous lighting FSM |
+| `clear` | None | Injects simulated motion clear to begin grace and vacancy countdown |
+| `help` | None | Displays available commands |

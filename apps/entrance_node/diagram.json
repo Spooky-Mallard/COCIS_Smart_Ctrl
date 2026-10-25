@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "author": "Matthew Mumbere",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 20,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -170,
+      "left": -80,
+      "attrs": { "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-microsd-card",
+      "id": "sd1",
+      "top": -150,
+      "left": 240,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo_entry",
+      "top": 20,
+      "left": -340,
+      "attrs": { "hornColor": "green" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo_exit",
+      "top": 150,
+      "left": -340,
+      "attrs": { "hornColor": "blue" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_entry",
+      "top": 30,
+      "left": 340,
+      "attrs": { "color": "green", "label": "ENTRY GRANTED" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_exit",
+      "top": 80,
+      "left": 340,
+      "attrs": { "color": "green", "label": "EXIT GRANTED" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_alarm",
+      "top": 130,
+      "left": 340,
+      "attrs": { "color": "red", "label": "SECURITY ALARM" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_entry",
+      "top": 35,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_exit",
+      "top": 85,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_alarm",
+      "top": 135,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 180,
+      "left": 240,
+      "attrs": { "volume": "0.2" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_entry",
+      "top": -130,
+      "left": -340,
+      "attrs": { "color": "green", "label": "SCAN ENTRY (VALID)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_exit",
+      "top": -60,
+      "left": -340,
+      "attrs": { "color": "blue", "label": "SCAN EXIT (VALID)" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_deny",
+      "top": -130,
+      "left": -210,
+      "attrs": { "color": "red", "label": "SCAN INTRUDER TAG" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_emerg",
+      "top": -60,
+      "left": -210,
+      "attrs": { "color": "yellow", "label": "EMERGENCY EVAC" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+
+    [ "lcd1:GND", "esp:GND.2", "black", [ "h-20", "v60" ] ],
+    [ "lcd1:VCC", "esp:VIN", "red", [ "h-15", "v80" ] ],
+    [ "lcd1:SDA", "esp:D21", "green", [ "h20", "v80" ] ],
+    [ "lcd1:SCL", "esp:D22", "gold", [ "h30", "v60" ] ],
+
+    [ "sd1:VCC", "esp:3V3", "red", [ "h-20", "v100" ] ],
+    [ "sd1:GND", "esp:GND.1", "black", [ "h-30", "v110" ] ],
+    [ "sd1:CS", "esp:D5", "orange", [ "h-40", "v60" ] ],
+    [ "sd1:SCK", "esp:D18", "purple", [ "h-50", "v50" ] ],
+    [ "sd1:DI", "esp:D23", "blue", [ "h-60", "v20" ] ],
+    [ "sd1:DO", "esp:D19", "cyan", [ "h-45", "v40" ] ],
+
+    [ "servo_entry:PWM", "esp:D13", "green", [ "h60", "v80" ] ],
+    [ "servo_entry:V+", "esp:VIN", "red", [ "h40", "v120" ] ],
+    [ "servo_entry:GND", "esp:GND.2", "black", [ "h50", "v110" ] ],
+
+    [ "servo_exit:PWM", "esp:D12", "blue", [ "h70", "v-10" ] ],
+    [ "servo_exit:V+", "esp:VIN", "red", [ "h40", "v20" ] ],
+    [ "servo_exit:GND", "esp:GND.2", "black", [ "h50", "v10" ] ],
+
+    [ "esp:D2", "led_entry:A", "green", [ "h40" ] ],
+    [ "led_entry:C", "r_entry:1", "black", [ "h10" ] ],
+    [ "r_entry:2", "esp:GND.1", "black", [ "v120", "h-100" ] ],
+
+    [ "esp:D4", "led_exit:A", "green", [ "h40" ] ],
+    [ "led_exit:C", "r_exit:1", "black", [ "h10" ] ],
+    [ "r_exit:2", "esp:GND.1", "black", [ "v80", "h-100" ] ],
+
+    [ "esp:D15", "led_alarm:A", "red", [ "h40" ] ],
+    [ "led_alarm:C", "r_alarm:1", "black", [ "h10" ] ],
+    [ "r_alarm:2", "esp:GND.1", "black", [ "v40", "h-100" ] ],
+
+    [ "bz1:2", "esp:D14", "purple", [ "h-30", "v-20" ] ],
+    [ "bz1:1", "esp:GND.1", "black", [ "h-40", "v-10" ] ],
+
+    [ "btn_entry:1.l", "esp:VIN", "red", [ "h20", "v120" ] ],
+    [ "btn_entry:2.l", "esp:D32", "green", [ "h40", "v100" ] ],
+
+    [ "btn_exit:1.l", "esp:VIN", "red", [ "h20", "v70" ] ],
+    [ "btn_exit:2.l", "esp:D33", "blue", [ "h40", "v50" ] ],
+
+    [ "btn_deny:1.l", "esp:VIN", "red", [ "h20", "v120" ] ],
+    [ "btn_deny:2.l", "esp:D27", "orange", [ "h30", "v100" ] ],
+
+    [ "btn_emerg:1.l", "esp:VIN", "red", [ "h20", "v70" ] ],
+    [ "btn_emerg:2.l", "esp:D26", "gold", [ "h30", "v50" ] ]
+  ],
+  "serialMonitor": {
+    "display": "terminal"
+  }
+}

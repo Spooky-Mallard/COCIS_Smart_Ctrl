@@ -1,131 +1,112 @@
-# System Architecture
+# System Architecture: Distributed 3-Node CoCIS System
 
-**Project:** CoCIS Smart Control and Monitoring System (Makerere University)  
-**Target:** ESP32 / ESP-IDF v6.0.2 / FreeRTOS / Wokwi
+**Project:** Smart Control and Monitoring System for the College of Computing and Information Sciences (CoCIS), Makerere University  
+**Target:** 3x ESP32 Microcontrollers / ESP-IDF v6.0.2 / FreeRTOS / Wokwi Simulator  
+**Topology:** Distributed Multi-Terminal Architecture over Simulated Wi-Fi (`Wokwi-GUEST`) via MQTT v3.1.1 Broker
 
 ---
 
-## 1. High-Level Layered Architecture
+## 1. Physical Node Separation & Distributed Topology
 
-The firmware is structured into **four strict architectural layers** across **21 single-responsibility C modules**, orchestrated by a minimal `main/main.c`.
+The system comprises **three physically separate microcontroller nodes** deployed across CoCIS facilities:
 
 ```mermaid
 flowchart TB
-    subgraph Layer4["Layer 4: Presentation, CLI & Distributed Coordination"]
-        CLI["cli\n(UART0 Interactive Console)"]
-        DISP["display\n(I2C 16x2 LCD Coordinator)"]
-        PROTO["net_protocol\n(Inter-Node Packet Router & MQTT)"]
-        HEALTH["health\n(Watchdog, Heartbeats, Heap/Stack)"]
+    subgraph EntranceApp["Node 0: Main Entrance Coordinator (apps/entrance_node)"]
+        direction TB
+        E_ESP["ESP32 DevKit v1\n(Ground Floor Entrance)"]
+        E_SERVO["Dual Door Servos\n(ENTRY & EXIT)"]
+        E_RFID["Dual RFID Points\n(ENTRY & EXIT)"]
+        E_LCD["I2C 16x2 / 20x4 LCD\n(Live Headcount & Status)"]
+        E_SD["MicroSD SPI Storage\n(SHA-256 Hash Chained Logs)"]
+        E_CLI["UART0 Admin Console\n(8-Option Management Menu)"]
+        E_ESP --- E_SERVO & E_RFID & E_LCD & E_SD & E_CLI
     end
 
-    subgraph Layer3["Layer 3: Domain Logic & Security Engines"]
-        ACC["access_control\n(Entry/Exit Decision Pipeline)"]
-        LIGHT["light\n(Room 1 & 2 Smart Lighting FSM)"]
-        SCHED["schedule\n(Day-of-Week Windows & Overrides)"]
-        AUTH["auth\n(Salted SHA-256 Admin Sessions)"]
+    subgraph Room1App["Node 1: Lecture Room 1 Terminal (apps/room1_node)"]
+        direction TB
+        R1_ESP["ESP32 DevKit v1\n(Lecture Room 1)"]
+        R1_PIR["PIR Motion Sensor\n(GPIO 27)"]
+        R1_RELAY["Lighting Relay / Fixture\n(GPIO 12)"]
+        R1_BUF["Store & Forward Buffer\n(32-Entry Circular FIFO)"]
+        R1_CLI["UART0 Status Console"]
+        R1_ESP --- R1_PIR & R1_RELAY & R1_BUF & R1_CLI
     end
 
-    subgraph Layer2["Layer 2: Authoritative Data Stores & Logging"]
-        UDB["user_db\n(Enrolled RFID Tags & Roles)"]
-        LEDGER["occupancy_ledger\n(Live Who-Is-Inside & Anti-Passback)"]
-        LOG["logger\n(Async Queue + Hash-Chained CSV)"]
-        TIME["time_sync\n(EAT UTC+3 Clock & SNTP)"]
+    subgraph Room2App["Node 2: Lecture Room 2 Terminal (apps/room2_node)"]
+        direction TB
+        R2_ESP["ESP32 DevKit v1\n(Lecture Room 2)"]
+        R2_PIR["PIR Motion Sensor\n(GPIO 26)"]
+        R2_RELAY["Lighting Relay / Fixture\n(GPIO 25)"]
+        R2_BUF["Store & Forward Buffer\n(32-Entry Circular FIFO)"]
+        R2_CLI["UART0 Status Console"]
+        R2_ESP --- R2_PIR & R2_RELAY & R2_BUF & R2_CLI
     end
 
-    subgraph Layer1["Layer 1: Hardware Abstraction & Core Services"]
-        CFG["config\n(NVS Settings & Constants)"]
-        PINS["board_pins\n(GPIO / Bus Mapping)"]
-        SYNC["sync\n(Hierarchical Mutexes & Event Group)"]
-        RFID["rfid\n(Entry/Exit Scan ISR & Sim)"]
-        DOOR["door\n(Dual Servo PWM & Status LEDs)"]
-        BUZ["buzzer\n(LEDC Tone Pattern Task)"]
-        PIR["pir_sensor\n(Room 1 & 2 Motion ISR + Debounce)"]
-        SD["storage_sd\n(SPI2 SDSPI + FATFS VFS)"]
-        WIFI["net_wifi\n(Wokwi-GUEST STA & esp_event)"]
+    subgraph Transport["Network Layer: Virtual Wi-Fi & MQTT Transport"]
+        WIFI["Wokwi-GUEST Virtual Wi-Fi\n(WASM Gateway)"]
+        BROKER[("MQTT Broker: broker.hivemq.com:1883\nTopic: cocis/smart_ctrl_mak/#")]
+        WIFI --- BROKER
     end
 
-    CLI --> ACC & LIGHT & SCHED & AUTH & UDB & LEDGER & LOG & SD & TIME & HEALTH & PROTO
-    ACC --> UDB & SCHED & LEDGER & DOOR & BUZ & DISP & LOG
-    PIR --> LIGHT
-    LIGHT --> PROTO & LOG & DISP
-    PROTO --> WIFI & LEDGER & SCHED & LOG & HEALTH
-    LOG --> SD
+    R1_ESP <==>|"HMAC-SHA256 Signed JSON\nRoom 1 Telemetry & Overrides"| BROKER
+    R2_ESP <==>|"HMAC-SHA256 Signed JSON\nRoom 2 Telemetry & Overrides"| BROKER
+    E_ESP <==>|"Telemetry Subscriptions,\nACKs & Emergency Broadcast"| BROKER
 ```
 
 ---
 
-## 2. Distributed Terminal Topology
+## 2. Component Organization
 
-Even when running on a single ESP32 in Wokwi (`NODE_MODE_ALL_IN_ONE`), the three physical terminals operate as independent state machines communicating exclusively through `net_protocol`:
+### 2.1 Shared Library Component: `components/cocis_common`
+Shared across all three applications to eliminate duplicate code while guaranteeing wire compatibility:
+- **`cocis_types.h`**: Core types (`node_id_t`, `proto_msg_type_t`, `proto_packet_t`, `node_net_status_t`).
+- **`cocis_config.h`**: Centralized broker IP, credentials, topic templates, and timing constants.
+- **`cocis_crypto.h / .c`**: Cryptographic HMAC-SHA256 signature generator and constant-time verifier.
+- **`cocis_protocol.h / .c`**: JSON serialization, deserialization, monotonic sequence numbering, and deduplication.
+- **`cocis_mqtt.h / .c`**: Lightweight zero-dependency MQTT v3.1.1 client over lwIP TCP sockets.
+- **`cocis_wifi.h / .c`**: Station manager connecting to `Wokwi-GUEST` with exponential backoff reconnect.
+- **`cocis_sync.h / .c`**: FreeRTOS mutexes and system event groups.
+- **`cocis_time.h / .c`**: SNTP client and East Africa Time (`EAT-3`, UTC+3) POSIX clock management.
+- **`cocis_health.h / .c`**: Watchdog and node heartbeat monitor.
 
-```mermaid
-sequenceDiagram
-    participant PIR1 as Room 1 PIR (GPIO 34)
-    participant N1 as Node 1 Task (Lecture Room 1)
-    participant BUS as net_protocol (Virtual Bus + MQTT)
-    participant ENT as Node 0 Coordinator (Main Entrance)
-    participant SD as Logger Task (/sdcard)
+### 2.2 Hub Application: `apps/entrance_node`
+The central authoritative controller of the CoCIS building:
+- **`access_control`**: Dual-portal entry/exit validation pipeline with anti-passback and schedule enforcement.
+- **`user_db`**: In-memory database of 8 enrolled campus personas with role-based access privileges.
+- **`schedule`**: Day-of-week building access windows with supervisor emergency overrides.
+- **`occupancy_ledger`**: Authoritative headcount and "who is inside" list tracking durations.
+- **`storage_sd`**: Hardware SDSPI FATFS driver mounting `/sdcard`.
+- **`logger`**: Asynchronous queue-driven CSV logger maintaining a tamper-evident SHA-256 hash chain.
+- **`auth`**: Salted SHA-256 administrator login engine for privileged operations.
+- **`door`**: Dual LEDC PWM servo actuator driver (0° closed, 90° open) with audio-visual indicators.
+- **`display`**: I2C 16x2 LCD updating building headcount, system time, and network status.
+- **`cli`**: UART0 interactive administration console with 8 structured menus.
+- **`net_protocol`**: Subscribes to room telemetry, validates HMAC signatures, logs lighting energy to SD card, and sends ACKs.
 
-    PIR1->>N1: Motion Detected (Rising Edge ISR -> Debounced)
-    N1->>N1: Turn Room 1 Light ON (GPIO 25 HIGH)<br/>State = LIGHT_ON_OCCUPIED
-    N1->>BUS: PROTO_MSG_ROOM_STATUS (src=1, seq=42, occ=1, light=1)
-    alt Node 1 Online
-        BUS->>ENT: Deliver Frame (seq=42)
-        ENT->>ENT: Check Duplicate Window (seq 42 is new)<br/>Update Building Room Table & Heartbeat
-        ENT->>SD: Enqueue Occupancy & Lighting CSV Event
-        ENT->>BUS: PROTO_MSG_ACK (dst=1, ack_seq=42)
-        BUS->>N1: Receive ACK (mark seq=42 complete)
-    else Node 1 Offline (Store-and-Forward)
-        N1->>N1: Timeout waiting for ACK -> Store in Offline Ring Buffer
-        Note over N1,ENT: Later, when link restores...
-        N1->>BUS: Replay Buffered Frames in Order (seq=42, 43...)
-        BUS->>ENT: Deliver Frame (seq=42)
-        ENT->>BUS: PROTO_MSG_ACK (dst=1, ack_seq=42)
-    end
-```
-
----
-
-## 3. FreeRTOS Task Map
-
-Every FreeRTOS task has a well-defined responsibility, stack size, priority, and blocking primitive (zero busy-wait loops):
-
-| Task Name | Module | Priority | Stack (Bytes) | Blocking Primitive | Primary Responsibility |
-| :--- | :--- | :---: | :---: | :--- | :--- |
-| `rfid_task` | `rfid` | **7** (High) | `4096` | `xQueueReceive(s_rfid_isr_queue)` | Debounces physical button/reader interrupts and dispatches `rfid_scan_event_t` to `access_control`. |
-| `access_task` | `access_control` | **6** | `6144` | `xQueueReceive(s_scan_queue)` | Evaluates RFID scans against `user_db`, `schedule`, and `occupancy_ledger`; triggers `door`, `buzzer`, `display`, and `logger`. |
-| `pir_light_task` | `pir_sensor` / `light` | **5** | `4096` | `xQueueReceive(s_pir_queue, 200ms)` | Processes Room 1 & Room 2 PIR edges, runs the smart-lighting grace/vacancy FSM, updates energy metrics, and emits room packets. |
-| `proto_task` | `net_protocol` | **5** | `6144` | `xQueueReceive(s_proto_rx_queue, 250ms)` | Routes inter-terminal frames, handles ACK timeouts, replays store-and-forward buffers, and services MQTT TCP socket I/O. |
-| `buzzer_task` | `buzzer` | **5** | `3072` | `xQueueReceive(s_buzzer_queue)` | Plays multi-step LEDC PWM acoustic patterns without blocking caller tasks. |
-| `display_task` | `display` | **4** | `4096` | `vTaskDelay(250ms)` / Override Event | Renders rotating telemetry screens and instant access/alarm alert banners on the 16x2 I2C LCD (`0x27`). |
-| `cli_task` | `cli` | **4** | `8192` | `uart_read_bytes(..., 100ms)` | Reads UART0 input, parses monitoring/admin/simulation commands, enforces session auto-logout, and prints formatted tables. |
-| `logger_task` | `logger` | **3** | `6144` | `xQueueReceive(s_log_queue, 1000ms)` | Computes SHA-256 hash chain and writes CSV records to `/sdcard/*.csv` (or RAM fallback). |
-| `health_task` | `health` | **2** (Low) | `4096` | `vTaskDelay(1000ms)` | Feeds Task Watchdog (`esp_task_wdt`), checks remote node heartbeat age, and tracks free heap / stack high-water marks. |
-
-*(Note: Door auto-close timing uses lightweight FreeRTOS Software Timers via the `Tmr Svc` daemon task rather than dedicating a separate task per door.)*
+### 2.3 Room Applications: `apps/room1_node` & `apps/room2_node`
+Autonomous lecture room terminals prioritizing local occupant safety and energy reduction:
+- **`pir_sensor`**: Interrupt-driven PIR motion detection with 100 ms debouncing.
+- **`light`**: Autonomous lighting FSM (`OFF_VACANT` $\rightarrow$ `ON_ACTIVE` $\rightarrow$ `ON_GRACE_HOLD`).
+- **`room_buffer`**: 32-entry circular FIFO store-and-forward ring buffer retaining telemetry when Hub is offline.
+- **`room_cli`**: Lightweight diagnostic serial console for testing motion and viewing local metrics.
 
 ---
 
-## 4. Deterministic System Initialization Order (`main/main.c`)
+## 3. Data Flow Architecture
 
-To prevent any task from accessing an uninitialized queue or mutex at boot, `app_main()` initializes modules strictly bottom-up before starting task loops:
+### 3.1 Normal Occupancy & Telemetry Cycle
+1. Student walks into Lecture Room 1: PIR sensor (`GPIO 27`) triggers an edge interrupt.
+2. `pir_sensor` notifies `light`, which immediately turns ON the lighting fixture (`GPIO 12`).
+3. Room 1 constructs a `proto_packet_t` (`PROTO_MSG_ROOM_EVENT`), assigns monotonic sequence number `seq_id`, timestamps the event in EAT, and calculates HMAC-SHA256.
+4. Room 1 publishes the signed JSON payload to `cocis/smart_ctrl_mak/room/1/telemetry`.
+5. Entrance Hub receives the packet, validates the HMAC-SHA256 signature, and checks `seq_id > last_rx_seq`.
+6. Hub appends the lighting event to `/sdcard/lighting.csv` and publishes `PROTO_MSG_ACK` to `cocis/smart_ctrl_mak/room/1/control`.
+7. Room 1 receives the ACK and marks the packet successfully delivered.
 
-1. **Core Infrastructure**: `sync_init()` (creates all hierarchical mutexes and the system event group) -> `config_init()` (initializes NVS flash and loads persistent settings) -> `board_pins_init()` (configures baseline safe GPIO states).
-2. **Storage & Time**: `time_sync_init()` (sets `EAT-3` timezone and seeds RTC) -> `storage_sd_init()` (mounts `/sdcard` over SPI2) -> `logger_init()` (starts background hash-chained CSV logger).
-3. **Authoritative Databases**: `user_db_init()` (loads enrolled users or seeds 8 default CoCIS tags) -> `schedule_init()` (loads weekly schedule windows) -> `occupancy_ledger_init()` (recovers "who is inside" from `/sdcard/access.csv` if rebooted mid-day) -> `auth_init()` (initializes salted SHA-256 admin credentials).
-4. **Peripherals & Domain Controllers**: `buzzer_init()` -> `display_init()` -> `door_init()` -> `access_control_init()` -> `rfid_init()` -> `light_init()` -> `pir_sensor_init()`.
-5. **Networking, Health & Console**: `net_wifi_init()` -> `net_protocol_init()` -> `health_init()` -> `cli_init()`.
-
----
-
-## 5. Module Ownership Matrix (5-Student Group Division)
-
-The 21 modules are partitioned into **5 balanced bundles** so each student in a 5-member group owns ~4 cohesive modules and can explain every line of their subsystem:
-
-| Student | Bundle Title | Assigned Modules (`include/`, `src/`, `modules/<m>/README.md`) |
-| :---: | :--- | :--- |
-| **Student 1** | **Config, Pins, SD Storage & Hash-Chained Logger** | `config`, `board_pins`, `storage_sd`, `logger` |
-| **Student 2** | **Entrance RFID, Motorized Doors, Buzzer & Access Engine** | `rfid`, `door`, `buzzer`, `access_control` |
-| **Student 3** | **User DB, Schedule, Occupancy Ledger & Admin Auth** | `user_db`, `schedule`, `occupancy_ledger`, `auth` |
-| **Student 4** | **Lecture Room PIR, Smart Lighting, I2C LCD & Time Sync** | `pir_sensor`, `light`, `display`, `time_sync` |
-| **Student 5** | **Synchronization, Wi-Fi, Distributed Protocol, Health & CLI** | `sync`, `net_wifi`, `net_protocol`, `health`, `cli` |
+### 3.2 Hub Offline & Store-and-Forward Replay
+1. Entrance Hub goes offline or Wi-Fi drops.
+2. Occupants in Lecture Room 1 continue their lecture. The local light FSM operates autonomously with **zero latency and zero network dependency**.
+3. Every state change is queued into the 32-entry `room_buffer`.
+4. When Entrance Hub reconnects, Room 1 detects the MQTT session and flushes buffered events in strict chronological order.
+5. Hub processes every replayed event and logs them with their original occurrence timestamps preserved.

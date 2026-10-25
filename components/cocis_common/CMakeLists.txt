@@ -1,0 +1,20 @@
+idf_component_register(
+    SRCS
+        "src/cocis_crypto.c"
+        "src/cocis_protocol.c"
+        "src/cocis_mqtt.c"
+        "src/cocis_wifi.c"
+        "src/cocis_sync.c"
+        "src/cocis_time.c"
+        "src/cocis_health.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_wifi
+        esp_netif
+        esp_event
+        nvs_flash
+        lwip
+        mbedtls
+        esp_timer
+)

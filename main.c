@@ -5248,7 +5248,7 @@ esp_err_t cli_init(void)
 }
 
 /* ============================================================================== */
-/* 5. MASTER APPLICATION ENTRY POINT (setup / loop / app_main)                    */
+/* 5. MASTER APPLICATION ENTRY POINT (setup & loop for Wokwi Web)                */
 /* ============================================================================== */
 
 void setup(void)
@@ -5298,14 +5298,3 @@ void loop(void)
 {
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
-
-#ifndef ARDUINO
-/* Fallback entry point for native ESP-IDF toolchains without Arduino core */
-void __attribute__((weak)) app_main(void)
-{
-    setup();
-    while (1) {
-        loop();
-    }
-}
-#endif

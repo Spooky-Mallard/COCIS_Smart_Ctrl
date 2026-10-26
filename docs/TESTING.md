@@ -64,3 +64,61 @@ On the Entrance Hub console, enter Option `[8]` (or command `sim selftest`). The
  OVERALL STATUS: ALL 10 TESTS PASSED (100% SPECIFICATION COMPLIANCE)
 ==============================================================================
 ```
+
+---
+
+## 4. Live Interactive Testing Workflow & Visual Indicators
+
+For examiners and students conducting live grading demonstrations across multiple VS Code windows:
+
+### 4.1 Physical Button Simulation on Entrance Canvas
+The Entrance Node canvas (`apps/entrance_node/diagram.json`) features four active-low momentary pushbuttons wired to ground (`esp:GND.2`) with internal pull-ups:
+- **`btn_entry` (`GPIO 32`)**: Simulates a valid student card tap at the Entry turnstile.
+  - *Immediate Effect:* Green LED flashes, Entry servo rotates to 90° for 3 seconds, buzzer emits a dual-tone chime, headcount increments on LCD.
+- **`btn_exit` (`GPIO 33`)**: Simulates a valid student card tap at the Exit turnstile.
+  - *Immediate Effect:* Exit servo rotates to 90°, LCD headcount decrements, stay duration recorded in `/sdcard/access.csv`.
+- **`btn_deny` (`GPIO 27`)**: Simulates an unregistered card tap.
+  - *Immediate Effect:* Red alarm LED illuminates, buzzer emits an error tone, LCD shows `"ACCESS DENIED"`.
+- **`btn_emerg` (`GPIO 26`)**: Hardware emergency evacuation trigger.
+  - *Immediate Effect:* Both servos unlock to 90°, alarm siren sounds continuously, building enters emergency state.
+
+### 4.2 Interactive Room Motion & Lighting Test
+In Window 2 (`apps/room1_node`) or Window 3 (`apps/room2_node`):
+1. **Interactive Toggle**: Click the simulated PIR motion sensor (`wokwi-pir-motion-sensor`) on the canvas or type `motion` in the serial terminal.
+2. **Local Reaction**: The yellow LED (`GPIO 12` on Room 1, `GPIO 25` on Room 2) illuminates immediately. The terminal logs:
+   ```text
+   I (xxxx) PIR_TASK: Motion edge detected (level=1)
+   I (xxxx) LIGHT: Light turned ON (Room 1)
+   I (xxxx) cocis_mqtt: Published packet seq=101 to cocis/smart_ctrl_mak/room/1/telemetry
+   ```
+3. **Remote Visual Reaction on Entrance Node**:
+   - The Entrance Node receives the MQTT packet, decodes the multi-byte remaining length header, and verifies the HMAC-SHA256 signature.
+   - The Entrance Node 16x2 LCD immediately displays a 2.5-second alert banner:
+     ```text
+     +----------------+
+     | ROOM 1 UPDATE! |
+     | Light:ON Mot:1 |
+     +----------------+
+     ```
+   - The Entrance Node terminal outputs:
+     ```text
+     I (xxxx) ENTRANCE_PROTO: [INGRESS] Rx packet from Node 1 (seq=101, type=0x02)
+     I (xxxx) DISPLAY: Displaying temporary alert (2500 ms)
+     I (xxxx) ENTRANCE_LIGHT_PROXY: [Room 1 Proxy] Remote light event: Occ=1, Light=1
+     I (xxxx) ENTRANCE_PROTO: Sent ACK for seq=101 to topic cocis/smart_ctrl_mak/room/1/control
+     ```
+   - Room 1 terminal receives the ACK:
+     ```text
+     I (xxxx) cocis_mqtt: Rx packet on cocis/smart_ctrl_mak/room/1/control: type=0xF0, ack_seq=101
+     ```
+4. **Vacancy Countdown**:
+   - Unclick the PIR sensor or type `clear` in the Room 1 terminal.
+   - Room 1 enters `ON_GRACE_HOLD` and begins a 15-second vacancy countdown.
+   - After 15 seconds, the yellow LED turns OFF, accumulated energy savings are computed in `mWh` and `UGX`, and a new signed telemetry packet is published.
+   - Entrance Node LCD displays:
+     ```text
+     +----------------+
+     | ROOM 1 UPDATE! |
+     | Light:OFF Mot:0|
+     +----------------+
+     ```

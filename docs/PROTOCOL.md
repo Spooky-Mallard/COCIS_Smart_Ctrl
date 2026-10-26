@@ -113,3 +113,65 @@ sequenceDiagram
     M->>R: DELIVER ACK
     R->>R: Pop seq=102 from room_buffer
 ```
+
+---
+
+## 6. MQTT Transport Wire Mechanics & Frame Decoding
+
+The system incorporates a custom, zero-dependency MQTT v3.1.1 client (`components/cocis_common/src/cocis_mqtt.c`) engineered to operate over raw lwIP BSD sockets with minimal memory overhead.
+
+### 6.1 MQTT Fixed Header & Variable-Length Remaining Length
+An MQTT v3.1.1 packet begins with a 2-to-5 byte header:
+1. **Byte 0: Packet Type & Flags**: For `PUBLISH` (QoS 0), byte 0 is `0x30` (`0011 0000`).
+2. **Bytes 1–4: Remaining Length**: Encoded using a variable-length integer scheme:
+   - The lower 7 bits (`0x7F`) of each byte represent digits in base 128.
+   - The most significant bit (`0x80`) is a continuation flag indicating that further length bytes follow.
+
+```
+       +-------------------------------+
+Byte 0 |  Packet Type (4) | Flags (4)  |  e.g., 0x30 for PUBLISH
+       +-------------------------------+
+Byte 1 | 1 |       Remaining Length    |  Continuation bit set (0x80) if >= 128
+       +-------------------------------+
+Byte 2 | 0 |       Remaining Length    |  Final length byte (MSB = 0)
+       +-------------------------------+
+Byte 3 |       Topic Length (MSB)      |  Variable Header begins here (at rem_offset)
+       +-------------------------------+
+Byte 4 |       Topic Length (LSB)      |
+       +-------------------------------+
+Byte 5 |       Topic UTF-8 String...   |
+       +-------------------------------+
+       |       Application Payload     |  Raw HMAC-signed JSON string
+       +-------------------------------+
+```
+
+### 6.2 Decoding Algorithm
+Because HMAC-SHA256 signed JSON payloads expand to ~195 bytes (total MQTT frame ~234 bytes), the Remaining Length requires 2 bytes. The parser dynamically calculates the byte offset where the variable header begins:
+
+```c
+uint32_t rem_len = 0;
+uint32_t multiplier = 1;
+int rem_offset = 1;
+uint8_t encoded_byte = 0;
+
+do {
+    if (rem_offset >= len) return;
+    encoded_byte = (uint8_t)buf[rem_offset++];
+    rem_len += (encoded_byte & 0x7F) * multiplier;
+    multiplier *= 128;
+} while ((encoded_byte & 0x80) != 0 && rem_offset < 5);
+
+/* Topic length is read dynamically at rem_offset */
+uint16_t topic_len = ((uint8_t)buf[rem_offset] << 8) | (uint8_t)buf[rem_offset + 1];
+const char *topic_str = &buf[rem_offset + 2];
+int payload_offset = rem_offset + 2 + topic_len;
+```
+
+### 6.3 Topic Wildcard Matching Rules
+The Entrance Hub subscribes to room telemetry using the single-level wildcard topic:
+`cocis/smart_ctrl_mak/room/+/telemetry`
+
+The topic matching engine in `cocis_mqtt.c` evaluates incoming topics using token-based matching:
+- **Exact Match**: Direct equality check (`strcmp(sub, topic) == 0`).
+- **Single-Level Wildcard (`+`)**: Matches exactly one hierarchical level between slashes. For example, `room/+/telemetry` matches both `room/1/telemetry` and `room/2/telemetry`, but does not match `room/1/2/telemetry`.
+- **Multi-Level Wildcard (`#`)**: Matches any number of remaining hierarchical levels at the end of a topic path.

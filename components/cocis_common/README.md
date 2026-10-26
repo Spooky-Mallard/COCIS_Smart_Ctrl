@@ -127,13 +127,15 @@ flowchart TB
 
 ### 2.4 Lightweight Zero-Dependency MQTT v3.1.1 Client (`include/cocis_mqtt.h`)
 - `esp_err_t cocis_mqtt_init(const char *broker_host, uint16_t port, const char *client_id)`:
-  Creates the internal FreeRTOS mutexes, queues, and background TCP listener task.
+  Creates internal FreeRTOS mutexes and spawns the background TCP socket listener task (`cocis_mqtt`, 10 KB stack budget). Utilizes static BSS buffers (`s_rx_buf[1024]` and `s_rx_payload[512]`) to eliminate heap fragmentation and prevent stack exhaustion during synchronous cryptographic ingress processing.
 - `esp_err_t cocis_mqtt_connect(void)`:
   Establishes a raw TCP stream over lwIP sockets to the broker and sends the binary MQTT `CONNECT` packet (flags: CleanSession=1, KeepAlive=60s).
 - `esp_err_t cocis_mqtt_subscribe(const char *topic, uint8_t qos, cocis_mqtt_msg_cb_t cb)`:
-  Encodes and transmits an MQTT `SUBSCRIBE` packet and registers an in-memory topic callback.
+  Encodes and transmits an MQTT `SUBSCRIBE` packet and registers an in-memory topic callback supporting exact, single-level (`+`), and multi-level (`#`) wildcard topic patterns.
 - `esp_err_t cocis_mqtt_publish(const char *topic, const char *payload, uint8_t qos)`:
   Formats and transmits an MQTT `PUBLISH` packet over the TCP socket. Thread-safe (protected by `g_mqtt_tx_mutex`).
+- **Variable-Length Frame Decoder**:
+  Decodes standard MQTT v3.1.1 variable-length remaining length headers (1 to 4 bytes), dynamically locating topic and payload offsets for packets $>128$ bytes (such as HMAC-SHA256 authenticated JSON frames).
 - `bool cocis_mqtt_is_connected(void)`:
   Thread-safe state query.
 - `void cocis_mqtt_disconnect(void)`:

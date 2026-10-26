@@ -54,7 +54,7 @@ flowchart TB
 
 ---
 
-### 2.3 Empirical Verification: Can Multiple ESP32s Run in a Single Wokwi `diagram.json`?
+### 2.2 Empirical Verification: Can Multiple ESP32s Run in a Single Wokwi `diagram.json`?
 
 #### The Hypothesis
 To avoid managing multiple project directories, we tested whether Wokwi allows declaring three `wokwi-esp32-devkit-v1` parts (`esp0`, `esp1`, `esp2`) in a single `diagram.json`, flashing a single unified firmware binary, and using hardware strapping pins (`GPIO 34` and `GPIO 35`) to dynamically branch each MCU into its designated role:
@@ -74,6 +74,8 @@ We constructed a standalone test with:
 - **Consequent Architecture:** The 3-node distributed system must be architected as three separate standalone application projects (`apps/entrance_node`, `apps/room1_node`, `apps/room2_node`) sharing a common library component (`components/cocis_common`). Each node runs in its own simulation instance and communicates with the others over simulated Wi-Fi (`Wokwi-GUEST`) via a public/local MQTT broker.
 
 ---
+
+### 2.3 Three-Tier Life-Safety & Schedule Egress Enforcement
 
 #### The Requirement
 Section 1.6 of the coursework specification states:
@@ -102,7 +104,7 @@ To satisfy **both** the strict coursework anti-theft requirement (preventing som
 
 ---
 
-### 2.3 Password Hashing &ESP-IDF v6.0.2 Cryptography (`psa/crypto.h`)
+### 2.4 Password Hashing & ESP-IDF v6.0.2 Cryptography (`psa/crypto.h`)
 
 ESP-IDF v6.0.2 upgrades the cryptography subsystem to **mbedTLS 4.0 / TF-PSA-Crypto**, replacing legacy `mbedtls/sha256.h` calls with the standardized ARM **PSA Crypto API (`psa/crypto.h`)**.
 - In `auth.c` and `logger.c`, we initialize PSA Crypto via `psa_crypto_init()` and compute SHA-256 digests using `psa_hash_compute(PSA_ALG_SHA_256, input, len, hash_out, sizeof(hash_out), &hash_len)`.
@@ -111,7 +113,7 @@ ESP-IDF v6.0.2 upgrades the cryptography subsystem to **mbedTLS 4.0 / TF-PSA-Cry
 
 ---
 
-### 2.4 Non-Blocking SD Card Logging & Tamper-Evident Hash Chain
+### 2.5 Non-Blocking SD Card Logging & Tamper-Evident Hash Chain
 
 Writing to a FAT32 file on an SPI microSD card can take `5 ms` to `80 ms` (or longer during FAT sector allocation). If `access_control` wrote directly to `/sdcard/access.csv` while holding the occupancy mutex, the door servo actuation and LCD feedback would stutter, and other tasks waiting on the mutex would suffer unbounded latency.
 
@@ -119,3 +121,113 @@ Instead:
 1. Time-critical tasks call `logger_enqueue_access()` / `logger_enqueue_audit()`, which copies a compact `log_record_t` into a 32-deep FreeRTOS queue (`xQueueSend` with `0` tick wait) in **under 5 microseconds**.
 2. A dedicated low-priority background task (`logger_task`, Priority 3) drains the queue, computes a **running SHA-256 hash chain** (`H_n = SHA256(H_{n-1} || CSV_row)` truncated to 8 hex chars for compact student inspection), acquires `LOCK_LEVEL_SD`, writes the CSV line to `/sdcard/*.csv`, and flushes safely.
 3. If someone edits or deletes a line in `/sdcard/access.csv` or `/sdcard/audit.csv` on a PC, the CLI command `sd verify` recomputes the hash chain from genesis (`00000000`) and pinpoints the exact line number where tampering occurred!
+
+---
+
+### 2.6 Hardware Wiring Realities: Pushbutton Active-Low Pull-Up Polarity
+
+#### The Bug & Symptom
+During live testing in Wokwi, pressing the physical simulation pushbuttons (`btn_entry`, `btn_exit`, `btn_deny`, `btn_emerg`) on the Entrance Node canvas produced no response. No interrupts fired and no door actuations occurred.
+
+#### Root Cause Analysis
+The ESP32 firmware configured the GPIO input pins (`GPIO 32, 33, 27, 26`) with internal pull-up resistors (`gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY)`) and negative-edge interrupt triggers (`GPIO_INTR_NEGEDGE`). However, the `diagram.json` wiring connected the supply terminal of the pushbuttons to `esp:VIN` (5V). When unpressed, the internal pull-up held the pin at 3.3V. When pressed, the button applied 5V (HIGH), meaning the pin never transitioned from HIGH to LOW (`NEGEDGE`).
+
+#### Engineering Solution
+In `apps/entrance_node/diagram.json`, all four pushbutton terminals were rewired from `esp:VIN` to `esp:GND.2`. Under this active-low configuration:
+- In idle state, the internal pull-up holds the pin at 3.3V (HIGH).
+- When pressed, the button grounds the pin to 0V (LOW), generating a clean falling edge (`GPIO_INTR_NEGEDGE`) that triggers the ISR reliably.
+
+---
+
+### 2.7 Hardware ISR Decoupling: FreeRTOS Queue & Worker Task Pattern
+
+#### The Bug & Crash
+When toggling the simulated PIR motion sensor in Lecture Room 1 or Room 2, the ESP32 suffered a fatal kernel panic:
+```text
+abort() was called at PC 0x40082d3f on core 0
+Backtrace: ... lock_acquire_generic ... vfprintf ... ESP_LOGI
+```
+
+#### Root Cause Analysis
+The PIR driver registered a hardware interrupt handler `IRAM_ATTR pir_isr_handler` on `GPIO 27`. Within this ISR, the code synchronously invoked `s_callback(level)`. This callback directly executed `light_handle_motion()`, which attempted to acquire a FreeRTOS recursive mutex (`xSemaphoreTakeRecursive`) and called `ESP_LOGI()` (which invokes `vfprintf` requiring the newlib UART lock). FreeRTOS and ESP-IDF strictly forbid acquiring mutexes, calling standard blocking I/O, or allocating dynamic memory from inside a hardware ISR context (`xPortInIsrContext() == true`).
+
+#### Engineering Solution
+We decoupled the hardware interrupt from business logic by introducing a dedicated FreeRTOS queue and worker task in both `apps/room1_node/main/src/pir_sensor.c` and `apps/room2_node/main/src/pir_sensor.c`:
+1. **ISR (`IRAM_ATTR pir_isr_handler`)**: Executes in $<1 \mu\text{s}$. Reads `gpio_get_level()` and delivers the boolean state to a 4-deep queue using `xQueueSendFromISR(s_pir_queue, &val, &xHigherPriorityTaskWoken)`. If a higher-priority task is awakened, `portYIELD_FROM_ISR()` initiates an immediate context switch.
+2. **Worker Task (`pir_task`)**: Runs in normal task context (Priority 5, 4 KB stack). Blocks on `xQueueReceive(s_pir_queue, &level, portMAX_DELAY)`. Upon receiving a motion edge, it performs debouncing and safely invokes the lighting FSM callback with full access to FreeRTOS mutexes and logging.
+
+```mermaid
+sequenceDiagram
+    participant HW as Hardware PIR (GPIO 27)
+    participant ISR as IRAM_ATTR pir_isr_handler
+    participant Q as s_pir_queue (FreeRTOS)
+    participant T as pir_task (Worker Task)
+    participant FSM as light_handle_motion (FSM)
+
+    HW->>ISR: Rising Edge (Motion Detected)
+    ISR->>Q: xQueueSendFromISR(level=1)
+    ISR->>T: portYIELD_FROM_ISR()
+    Note over ISR: Exits in < 1 microsecond
+    T->>Q: xQueueReceive() wakes up
+    T->>FSM: Safe context switch to FSM callback
+    FSM->>FSM: Acquire Mutex & Energize Relay (GPIO 12)
+```
+
+---
+
+### 2.8 MQTT v3.1.1 Remaining Length Multi-Byte Variable Framing
+
+#### The Ingress Bug
+When Room 1 transmitted motion telemetry over MQTT, Room 1 logged `Published room event seq=...`, but the Entrance Hub never processed the message or acknowledged it.
+
+#### Root Cause Analysis
+The MQTT v3.1.1 specification defines the **Remaining Length** field in the fixed header as a variable-length encoded integer (1 to 4 bytes). Each byte uses the lower 7 bits for value and bit 7 (`0x80`) as a continuation flag:
+- Payloads $< 128$ bytes use a 1-byte length header.
+- Payloads $\ge 128$ bytes use a 2-byte length header.
+
+With HMAC-SHA256 signatures, the telemetry JSON packet grew to ~195 bytes, making the complete MQTT frame ~234 bytes. Byte 1 was `0xEA` and byte 2 was `0x01` (`0x6A + 1 \times 128 = 234`).
+The original lightweight MQTT receiver assumed Remaining Length was always 1 byte, expecting the Topic Length MSB at byte 2. Instead, byte 2 held `0x01`, which the parser interpreted as `topic_len = 0x01??` (256+ bytes), causing the topic parser to read out-of-bounds memory and drop the packet silently.
+
+#### Engineering Solution
+In `components/cocis_common/src/cocis_mqtt.c`, we implemented a fully standards-compliant variable-length remaining length decoder:
+```c
+/* Decode MQTT variable-length Remaining Length (up to 4 bytes) */
+uint32_t rem_len = 0;
+uint32_t multiplier = 1;
+int rem_offset = 1;
+uint8_t encoded_byte = 0;
+
+do {
+    if (rem_offset >= len) return;
+    encoded_byte = (uint8_t)buf[rem_offset++];
+    rem_len += (encoded_byte & 0x7F) * multiplier;
+    multiplier *= 128;
+} while ((encoded_byte & 0x80) != 0 && rem_offset < 5);
+```
+Topic length is now read dynamically at `rem_offset` (byte 3 for 2-byte lengths), and the parser accurately extracts the topic and JSON payload. Additionally, wildcard topic matching was upgraded to support single-level (`+`) and multi-level (`#`) tokens so the Hub's subscription `cocis/smart_ctrl_mak/room/+/telemetry` matches both `room/1/telemetry` and `room/2/telemetry`.
+
+---
+
+### 2.9 FreeRTOS Task Stack Budgets & Static Buffering for Network/Crypto
+
+#### The Stack Overflow Crash
+After fixing the framing decoder, receiving room telemetry caused an immediate task stack overflow:
+```text
+***ERROR*** A stack overflow in task cocis_mqtt has been detected.
+```
+
+#### Root Cause Analysis
+The `cocis_mqtt` background socket task was initially allocated 4096 bytes of stack. When receiving a packet, the call stack traversed:
+1. `cocis_mqtt_task`
+2. `topic_matches()`
+3. Ingress callback `entrance_proto_on_mqtt_rx()`
+4. `cocis_protocol_parse()` (JSON deserialization + string formatting)
+5. `cocis_crypto_verify_hmac()` (PSA Crypto context, SHA-256 hash calculation)
+6. `display_show_alert()` (LCD queue message generation)
+7. `logger_enqueue_access()` (SD log queue submission)
+
+Furthermore, the task allocated `char rx_buf[1024]` and `char payload[512]` on its local stack, exhausting the 4 KB stack frame.
+
+#### Engineering Solution
+1. **Moved Large Buffers to Static BSS**: `s_rx_buf[1024]` and `s_rx_payload[512]` were marked `static`, moving 1.5 KB off the FreeRTOS task stack and into `.bss` data memory.
+2. **Expanded Task Stack Budget**: Increased `cocis_mqtt` stack allocation from 4 KB to **10 KB (`10240` bytes)** (`xTaskCreate(cocis_mqtt_task, "cocis_mqtt", 10240, ...)`), leaving comfortable stack headroom of $>4.5\text{ KB}$ under peak cryptographic verification load.

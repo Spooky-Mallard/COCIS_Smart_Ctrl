@@ -29,11 +29,38 @@ The **Lecture Room 2 Terminal** is structurally and logically equivalent to Room
 
 ---
 
-## 3. Local CLI Commands
+## 3. FreeRTOS Tasks & Concurrency
+
+The firmware divides processing across dedicated FreeRTOS tasks:
+
+| Task Name | Priority | Core | Stack | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `pir_task` | 5 | 0 | 4 KB | Queue worker receiving GPIO 26 edges from `pir_isr_handler` via `s_pir_queue`, debounces, and drives lighting FSM. |
+| `cocis_mqtt` | 5 | 0 | 10 KB | Manages lwIP TCP socket, MQTT publication/subscription, and store-and-forward flushing. |
+| `light_task` | 4 | 0 | 3 KB | Background timer daemon driving the 15-second vacancy countdown and grace hold. |
+| `room_buf_task`| 3 | 1 | 4 KB | Drains the 32-entry circular FIFO store-and-forward buffer upon reconnecting to Hub. |
+| `room_cli_task`| 1 | 0 | 3 KB | Interactive diagnostic UART console processing local user commands. |
+
+---
+
+## 4. Store-and-Forward Offline Resilience
+
+When the Main Entrance Hub is offline or the network link drops:
+1. Local lighting automation **never stops**; room occupants always have working lights.
+2. The network client detects disconnection (`mqtt_is_connected() == false`).
+3. Outgoing events are placed into `room_buffer_push()`.
+4. A 32-slot circular ring buffer retains the latest events without allocating dynamic heap memory.
+5. When the MQTT connection is re-established:
+   - The task calls `room_buffer_pop()` in a loop.
+   - Each buffered record is retransmitted as signed telemetry.
+   - The coordinator suppresses duplicates and acknowledges each packet.
+
+---
+
+## 5. Local CLI Commands
 Run these commands in the terminal connected to Room 2:
 - `status`: Show current lighting state, relay status, motion sensor level, and network link state.
-- `motion on`: Manually trigger simulated PIR motion.
-- `motion off`: Stop simulated PIR motion (starts 15s vacancy countdown).
+- `motion`: Manually trigger simulated PIR motion.
+- `clear`: Stop simulated PIR motion (starts 15s vacancy countdown).
 - `buffer`: Inspect store-and-forward queue depth and replayed count.
-- `clear`: Clear console screen.
 - `help`: Print command menu.

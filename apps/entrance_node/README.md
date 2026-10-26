@@ -71,10 +71,10 @@ flowchart TD
 | **MicroSD SPI SCK** | `GPIO 18` | SPI Clock | SDSPI Clock |
 | **MicroSD SPI MOSI** | `GPIO 23` | SPI Master-Out Slave-In | SDSPI Data In |
 | **MicroSD SPI MISO** | `GPIO 19` | SPI Master-In Slave-Out | SDSPI Data Out |
-| **Entry Scan Button** | `GPIO 32` | Pull-down Pushbutton | Simulates Student Card scan at Entry |
-| **Exit Scan Button** | `GPIO 33` | Pull-down Pushbutton | Simulates Student Card scan at Exit |
-| **Staff Scan Button** | `GPIO 27` | Pull-down Pushbutton | Simulates Staff Card scan at Entry |
-| **Evacuation Button** | `GPIO 26` | Pull-down Pushbutton | Hardware emergency trigger |
+| **Entry Scan Button** | `GPIO 32` | Active-Low Pushbutton (Internal Pull-Up, connected to GND) | Simulates Student Card scan at Entry |
+| **Exit Scan Button** | `GPIO 33` | Active-Low Pushbutton (Internal Pull-Up, connected to GND) | Simulates Student Card scan at Exit |
+| **Deny Scan Button** | `GPIO 27` | Active-Low Pushbutton (Internal Pull-Up, connected to GND) | Simulates Unregistered Card scan at Entry |
+| **Evacuation Button** | `GPIO 26` | Active-Low Pushbutton (Internal Pull-Up, connected to GND) | Hardware emergency trigger |
 
 ---
 
@@ -84,12 +84,13 @@ The Entrance Node firmware partitions duties across prioritized FreeRTOS tasks:
 
 | Task Name | Priority | Core | Stack | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `main_task` | 1 | 0 | 4 KB | Initial boot orchestrator; spawns subsystems and deletes self. |
-| `task_cli` | 3 | 0 | 6 KB | UART console reader with non-blocking readline and command dispatch. |
-| `task_display` | 2 | 1 | 4 KB | Refreshes LCD 1602 status banner every 1000 ms. |
-| `task_net_rx` | 4 | 0 | 6 KB | lwIP socket listener processing incoming MQTT packets. |
-| `task_sync` | 2 | 1 | 4 KB | Periodic heartbeat generator and node health watchdog. |
-| `task_logger` | 3 | 1 | 6 KB | Consumes log queue and appends CSV rows to MicroSD card. |
+| `main` | 1 | 0 | 4 KB | Initial boot orchestrator; spawns subsystems and deletes self. |
+| `access_task` | 5 | 0 | 4 KB | Consumes RFID scan events, evaluates APB & schedule, actuates door servos. |
+| `cocis_mqtt` | 5 | 0 | 10 KB | lwIP socket listener processing incoming MQTT packets, HMAC verification, and ACK dispatch. |
+| `logger_task` | 3 | 1 | 4 KB | Consumes log queue and appends CSV rows to MicroSD card with SHA-256 hash chaining. |
+| `display_task` | 2 | 1 | 3 KB | Refreshes LCD 1602 status banner and renders 2.5-second high-priority alert banners. |
+| `cli_task` | 1 | 0 | 4 KB | UART console reader with non-blocking readline and 8-menu command dispatch. |
+| `time_sync_task` | 1 | 0 | 3 KB | Periodic SNTP time synchronizer maintaining East Africa Time (`UTC+3`). |
 
 ---
 

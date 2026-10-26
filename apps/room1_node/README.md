@@ -62,13 +62,15 @@ stateDiagram-v2
 
 ## 3. FreeRTOS Tasks & Concurrency
 
-The firmware divides processing across three dedicated FreeRTOS tasks:
+The firmware divides processing across dedicated FreeRTOS tasks:
 
 | Task Name | Priority | Core | Stack | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `task_pir` | 4 | 0 | 4 KB | Interrupt-driven task debouncing GPIO 27 and driving the lighting FSM. |
-| `task_room_cli` | 2 | 1 | 4 KB | Interactive UART console processing local user inputs. |
-| `task_mqtt_client` | 3 | 0 | 6 KB | Manages lwIP TCP socket, background MQTT reception, and store-and-forward flushing. |
+| `pir_task` | 5 | 0 | 4 KB | Queue worker receiving GPIO 27 edges from `pir_isr_handler` via `s_pir_queue`, debounces, and drives lighting FSM. |
+| `cocis_mqtt` | 5 | 0 | 10 KB | Manages lwIP TCP socket, MQTT publication/subscription, and store-and-forward flushing. |
+| `light_task` | 4 | 0 | 3 KB | Background timer daemon driving the 15-second vacancy countdown and grace hold. |
+| `room_buf_task`| 3 | 1 | 4 KB | Drains the 32-entry circular FIFO store-and-forward buffer upon reconnecting to Hub. |
+| `room_cli_task`| 1 | 0 | 3 KB | Interactive diagnostic UART console processing local user commands (`motion`, `clear`, `status`). |
 
 ---
 

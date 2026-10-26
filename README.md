@@ -112,7 +112,18 @@ To observe all three microcontrollers communicating concurrently:
 
 ## 5. Live Demonstration & Verification
 
-### Interactive Management Console (Entrance Hub UART0)
+### 5.1 Interactive Hardware & Sensor Simulation
+- **Entrance Node Canvas (`apps/entrance_node/diagram.json`)**:
+  - Click `btn_entry` (GPIO 32, active-low to GND): Simulates student card entry. Green LED illuminates, Entry servo opens to 90° for 3 seconds, buzzer sounds chime, LCD increments headcount.
+  - Click `btn_exit` (GPIO 33, active-low to GND): Simulates student card exit. Exit servo opens, LCD decrements headcount, duration logged to `/sdcard/access.csv`.
+  - Click `btn_deny` (GPIO 27): Simulates unauthorized card scan. Red LED flashes, buzzer sounds alert tone.
+  - Click `btn_emerg` (GPIO 26): Triggers emergency evacuation mode. Both servos open, siren sounds, building-wide emergency status engaged.
+- **Lecture Room Terminals (`apps/room1_node` & `apps/room2_node`)**:
+  - Click the PIR motion sensor or enter `motion` in the serial terminal: Yellow LED illuminates immediately. Room publishes HMAC-signed telemetry over MQTT.
+  - **Instant Visual Cross-Node Feedback**: Entrance Hub receives the packet and immediately flashes a 2.5-second alert banner on its 16x2 LCD (`ROOM 1 UPDATE!` / `Light:ON Mot:1`) and logs the event to `/sdcard/lighting.csv`.
+  - Enter `clear` in the Room terminal: Starts the 15-second vacancy countdown; lighting turns OFF and accumulated energy savings are reported.
+
+### 5.2 Interactive Management Console (Entrance Hub UART0)
 In Window 1 (Entrance Hub), access the interactive management console:
 ```
 ============================================================
@@ -131,7 +142,7 @@ In Window 1 (Entrance Hub), access the interactive management console:
 Enter option [0-8]:
 ```
 
-### Automated 10-Scenario Self-Test:
+### 5.3 Automated 10-Scenario Self-Test:
 Press Option `[8]` (or type `sim selftest`) on the Entrance Hub console to execute the end-to-end automated verification suite covering valid entry, anti-passback, safe exit override, emergency evacuation, room lighting FSM, store-and-forward replay, and HMAC tamper defense.
 
 ---

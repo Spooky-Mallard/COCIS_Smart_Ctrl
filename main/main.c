@@ -144,8 +144,6 @@ esp_err_t config_get(sys_config_t *out_cfg);
 esp_err_t config_set(const sys_config_t *new_cfg);
 esp_err_t config_reset_defaults(void);
 
-#endif
-
 /* --- Header: board_pins.h --- */
 /* I2C Bus for 16x2 HD44780 LCD (PCF8574 Backpack) */
 #define PIN_I2C_SDA             GPIO_NUM_21
@@ -192,8 +190,6 @@ esp_err_t config_reset_defaults(void);
 
 esp_err_t board_pins_init(void);
 
-#endif
-
 /* --- Header: sync.h --- */
 typedef enum {
     LOCK_LEVEL_NONE = 0,
@@ -231,8 +227,6 @@ EventBits_t sync_event_get_all(void);
 
 esp_err_t sync_get_stats(sync_lock_level_t level, sync_lock_stats_t *out_stats);
 
-#endif
-
 /* --- Header: time_sync.h --- */
 typedef struct {
     int64_t epoch;
@@ -255,8 +249,6 @@ void      time_sync_format_iso(int64_t epoch, char *buf, size_t buf_len);
 void      time_sync_format_lcd(char *buf, size_t buf_len);
 bool      time_sync_is_valid(void);
 
-#endif
-
 /* --- Header: storage_sd.h --- */
 typedef struct {
     bool     mounted;
@@ -275,8 +267,6 @@ esp_err_t storage_sd_append_line(const char *rel_filename, const char *csv_heade
 esp_err_t storage_sd_read_lines(const char *rel_filename, sd_line_visitor_t visitor, void *ctx);
 esp_err_t storage_sd_clear_logs(void);
 esp_err_t storage_sd_get_status(sd_status_t *out_status);
-
-#endif
 
 /* --- Header: logger.h --- */
 typedef enum {
@@ -307,8 +297,6 @@ esp_err_t logger_verify_integrity(uint32_t *out_checked, bool *out_valid);
 esp_err_t logger_reset_chain(void);
 void      logger_flush_sync(uint32_t wait_ms);
 
-#endif
-
 /* --- Header: user_db.h --- */
 typedef enum {
     USER_ROLE_ADMIN = 0,
@@ -335,8 +323,6 @@ size_t      user_db_list(user_record_t *out_array, size_t max_items);
 esp_err_t   user_db_reset_defaults(void);
 const char *user_db_role_to_str(user_role_t role);
 bool        user_db_parse_role(const char *str, user_role_t *out_role);
-
-#endif
 
 /* --- Header: schedule.h --- */
 typedef struct {
@@ -381,8 +367,6 @@ int                 schedule_parse_day_name(const char *day_str);
 const char         *schedule_day_name(int day_of_week);
 const char         *schedule_decision_to_str(schedule_decision_t dec);
 
-#endif
-
 /* --- Header: occupancy_ledger.h --- */
 typedef struct {
     bool        is_inside;
@@ -414,8 +398,6 @@ size_t    occupancy_ledger_list_inside(occupant_record_t *out_list, size_t max_i
 esp_err_t occupancy_ledger_get_stats(occupancy_stats_t *out_stats);
 esp_err_t occupancy_ledger_clear_all(void);
 
-#endif
-
 /* --- Header: auth.h --- */
 typedef struct {
     bool     logged_in;
@@ -434,8 +416,6 @@ esp_err_t auth_change_password(const char *old_password, const char *new_passwor
 esp_err_t auth_get_status(auth_status_t *out_status);
 esp_err_t auth_reset_lockout(void);
 
-#endif
-
 /* --- Header: buzzer.h --- */
 typedef enum {
     BUZZER_PAT_GRANT = 0,
@@ -447,8 +427,6 @@ typedef enum {
 
 esp_err_t buzzer_init(void);
 esp_err_t buzzer_play(buzzer_pattern_t pattern);
-
-#endif
 
 /* --- Header: door.h --- */
 typedef enum {
@@ -479,8 +457,6 @@ esp_err_t   door_simulate_forced_hold(door_id_t door);
 esp_err_t   door_get_status(door_id_t door, door_status_t *out_status);
 const char *door_state_to_str(door_state_t state);
 
-#endif
-
 /* --- Header: rfid.h --- */
 typedef enum {
     RFID_READER_ENTRY = 0,
@@ -499,20 +475,14 @@ typedef void (*rfid_emergency_button_cb_t)(void);
 esp_err_t rfid_init(rfid_scan_callback_t scan_cb, rfid_emergency_button_cb_t emerg_cb);
 esp_err_t rfid_inject_scan(rfid_reader_t reader, const char *uid);
 
-#endif
-
 /* --- Header: display.h --- */
 esp_err_t display_init(void);
 esp_err_t display_show_alert(const char *line0, const char *line1, uint32_t duration_ms);
-
-#endif
 
 /* --- Header: pir_sensor.h --- */
 esp_err_t pir_sensor_init(void);
 esp_err_t pir_sensor_simulate_motion(uint8_t room_id, bool motion_active);
 bool      pir_sensor_get_state(uint8_t room_id);
-
-#endif
 
 /* --- Header: light.h --- */
 typedef enum {
@@ -540,8 +510,6 @@ void        light_tick_1hz(void);
 esp_err_t   light_get_room_status(uint8_t room_id, room_light_status_t *out_status);
 uint32_t    light_get_total_energy_saved_mwh(void);
 const char *light_fsm_to_str(light_fsm_state_t state);
-
-#endif
 
 /* --- Header: access_control.h --- */
 typedef enum {
@@ -578,8 +546,6 @@ access_result_t access_control_evaluate_sync(rfid_reader_t reader, const char *u
 esp_err_t       access_control_get_stats(access_stats_t *out_stats);
 const char     *access_control_result_to_str(access_result_t res);
 
-#endif
-
 /* --- Header: net_wifi.h --- */
 typedef struct {
     bool     connected;
@@ -592,8 +558,6 @@ typedef struct {
 esp_err_t net_wifi_init(void);
 bool      net_wifi_is_connected(void);
 esp_err_t net_wifi_get_status(wifi_status_t *out_status);
-
-#endif
 
 /* --- Header: net_protocol.h --- */
 typedef enum {
@@ -653,8 +617,6 @@ esp_err_t net_protocol_set_node_online(node_id_t node, bool online);
 esp_err_t net_protocol_get_node_status(node_id_t node, node_net_status_t *out_status);
 bool      net_protocol_is_mqtt_connected(void);
 
-#endif
-
 /* --- Header: health.h --- */
 typedef struct {
     uint32_t uptime_sec;
@@ -669,13 +631,9 @@ typedef struct {
 esp_err_t health_init(void);
 esp_err_t health_get_summary(health_summary_t *out_summary);
 
-#endif
-
 /* --- Header: cli.h --- */
 esp_err_t cli_init(void);
 esp_err_t cli_execute_line(char *line);
-
-#endif
 
 /* ============================================================================== */
 /* 3. COMMON UTILITY FUNCTIONS                                                   */

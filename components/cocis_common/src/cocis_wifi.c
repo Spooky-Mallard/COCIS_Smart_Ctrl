@@ -27,9 +27,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_connected = false;
         cocis_sync_event_clear(COCIS_EVT_WIFI_CONNECTED);
         s_retry_count++;
-        uint32_t delay_ms = (s_retry_count > 5) ? 5000 : (500 * s_retry_count);
-        ESP_LOGW(TAG, "Disconnected from AP, reconnecting in %lu ms...", (unsigned long)delay_ms);
-        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        ESP_LOGW(TAG, "Disconnected from AP, reconnecting (attempt %d)...", s_retry_count);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;

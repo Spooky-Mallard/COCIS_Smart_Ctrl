@@ -14,7 +14,7 @@ extern "C" {
 #define CFG_WIFI_PASS                 ""
 
 #define CFG_HEARTBEAT_INTERVAL_SEC    5
-#define CFG_NODE_OFFLINE_TIMEOUT_SEC  15
+#define CFG_NODE_OFFLINE_TIMEOUT_SEC  30
 #define CFG_MAX_STORE_FORWARD_EVENTS  32
 #ifndef CFG_LOCK_TIMEOUT_MS
 #define CFG_LOCK_TIMEOUT_MS           1000

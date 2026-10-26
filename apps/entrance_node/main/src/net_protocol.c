@@ -43,6 +43,8 @@ static void on_room_telemetry(const char *topic, const char *payload)
     cocis_health_record_rx(pkt.src_node, pkt.seq_id, pkt.uptime_sec, -55);
 
     if (pkt.msg_type == PROTO_MSG_HEARTBEAT) {
+        ESP_LOGI(TAG, "Heartbeat RX: Room Node %u [OCC=%u LGT=%u] (seq=%lu)",
+                 (unsigned)pkt.src_node, (unsigned)pkt.occupied, (unsigned)pkt.light_state, (unsigned long)pkt.seq_id);
         return;
     }
 
@@ -112,13 +114,9 @@ esp_err_t net_protocol_init(void)
     s_rooms[2].name = "Lecture Room 2";
     s_rooms[2].heartbeat_healthy = false;
 
-    /* Subscribe to all room telemetry topics (both explicit and wildcard) */
-    char sub_pattern[64], sub_r1[64], sub_r2[64];
+    /* Subscribe to all room telemetry topics via wildcard pattern */
+    char sub_pattern[64];
     snprintf(sub_pattern, sizeof(sub_pattern), "%s/room/+/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    snprintf(sub_r1, sizeof(sub_r1), "%s/room/1/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    snprintf(sub_r2, sizeof(sub_r2), "%s/room/2/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    cocis_mqtt_subscribe(sub_r1, on_room_telemetry);
-    cocis_mqtt_subscribe(sub_r2, on_room_telemetry);
     cocis_mqtt_subscribe(sub_pattern, on_room_telemetry);
 
     s_initialized = true;
@@ -226,7 +224,7 @@ esp_err_t net_protocol_get_status(node_id_t node_id, node_net_status_t *out_stat
     } else {
         out_status->name = (node_id == NODE_ID_ROOM_1) ? "Lecture Room 1" : "Lecture Room 2";
         out_status->heartbeat_healthy = s_rooms[node_id].heartbeat_healthy;
-        out_status->link_simulated_online = true;
+        out_status->link_simulated_online = s_rooms[node_id].heartbeat_healthy;
         out_status->last_rx_seq = s_rooms[node_id].last_rx_seq;
         out_status->acked_count = s_rooms[node_id].acked_count;
         out_status->dup_suppressed_count = s_rooms[node_id].dup_suppressed_count;

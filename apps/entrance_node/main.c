@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -135,7 +136,7 @@ typedef struct {
 #define CFG_WIFI_PASS                 ""
 
 #define CFG_HEARTBEAT_INTERVAL_SEC    5
-#define CFG_NODE_OFFLINE_TIMEOUT_SEC  15
+#define CFG_NODE_OFFLINE_TIMEOUT_SEC  30
 #define CFG_MAX_STORE_FORWARD_EVENTS  32
 #ifndef CFG_LOCK_TIMEOUT_MS
 #define CFG_LOCK_TIMEOUT_MS           1000
@@ -4391,9 +4392,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         s_wifi_connected = false;
         cocis_sync_event_clear(COCIS_EVT_WIFI_CONNECTED);
         s_wifi_retry_count++;
-        uint32_t delay_ms = (s_wifi_retry_count > 5) ? 5000 : (500 * s_wifi_retry_count);
-        ESP_LOGW(TAG, "Disconnected from AP, reconnecting in %lu ms...", (unsigned long)delay_ms);
-        vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        ESP_LOGW(TAG, "Disconnected from AP, reconnecting (attempt %d)...", s_wifi_retry_count);
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -4485,8 +4484,10 @@ static int s_mqtt_sock = -1;
 static bool s_mqtt_connected = false;
 static node_id_t s_mqtt_my_node_id = NODE_ID_ENTRANCE;
 static char s_mqtt_client_id[32] = { 0 };
-static uint8_t s_mqtt_rx_buf[1024];
-static char s_mqtt_rx_payload[512];
+static uint8_t s_mqtt_rx_buf[1536];
+static size_t s_rx_buf_len = 0;
+static uint16_t s_sub_pkt_id = 1;
+static int64_t s_last_ping_sec = 0;
 
 static esp_err_t mqtt_send_bytes(const uint8_t *data, size_t len)
 {
@@ -4497,7 +4498,7 @@ static esp_err_t mqtt_send_bytes(const uint8_t *data, size_t len)
     while (sent < len) {
         int r = send(s_mqtt_sock, data + sent, len - sent, 0);
         if (r <= 0) {
-            ESP_LOGW(TAG, "Socket send error: %d", r);
+            ESP_LOGW(TAG, "Socket send error: %d (errno=%d)", r, errno);
             return ESP_FAIL;
         }
         sent += (size_t)r;
@@ -4515,17 +4516,20 @@ static esp_err_t mqtt_subscribe_remote(const char *topic)
     uint8_t pkt[128];
     size_t rem_len = 2 + 2 + tlen + 1; /* Packet ID (2) + Topic Len (2) + Topic + QoS (1) */
 
+    uint16_t pid = s_sub_pkt_id++;
+    if (s_sub_pkt_id == 0) s_sub_pkt_id = 1;
+
     pkt[0] = 0x82; /* SUBSCRIBE QoS 1 */
     pkt[1] = (uint8_t)rem_len;
-    pkt[2] = 0x00; /* Packet ID MSB */
-    pkt[3] = 0x01; /* Packet ID LSB */
+    pkt[2] = (uint8_t)(pid >> 8);
+    pkt[3] = (uint8_t)(pid & 0xFF);
     pkt[4] = (uint8_t)(tlen >> 8);
     pkt[5] = (uint8_t)(tlen & 0xFF);
     memcpy(&pkt[6], topic, tlen);
-    pkt[6 + tlen] = 0x00; /* QoS 0 */
+    pkt[6 + tlen] = 0x00; /* Requested QoS 0 */
 
     if (mqtt_send_bytes(pkt, 7 + tlen) == ESP_OK) {
-        ESP_LOGI(TAG, "Subscribed to MQTT topic: %s", topic);
+        ESP_LOGI(TAG, "Subscribed to MQTT topic: %s (pkt_id=%u)", topic, (unsigned)pid);
         return ESP_OK;
     }
     return ESP_FAIL;
@@ -4589,6 +4593,7 @@ static void mqtt_task(void *arg)
                 s_mqtt_sock = -1;
             }
             s_mqtt_connected = false;
+            s_rx_buf_len = 0;
             cocis_sync_event_clear(COCIS_EVT_MQTT_CONNECTED);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
@@ -4612,7 +4617,7 @@ static void mqtt_task(void *arg)
                 continue;
             }
 
-            struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+            struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
             setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
@@ -4652,6 +4657,8 @@ static void mqtt_task(void *arg)
             if (n == 4 && connack[0] == 0x20 && connack[3] == 0x00) {
                 s_mqtt_sock = s;
                 s_mqtt_connected = true;
+                s_rx_buf_len = 0;
+                s_last_ping_sec = (int64_t)(esp_timer_get_time() / 1000000ULL);
                 cocis_sync_event_set(COCIS_EVT_MQTT_CONNECTED);
                 ESP_LOGI(TAG, "MQTT connected to %s:%d (Client: %s)",
                          CFG_MQTT_BROKER_HOST, CFG_MQTT_BROKER_PORT, s_mqtt_client_id);
@@ -4659,82 +4666,127 @@ static void mqtt_task(void *arg)
                 /* Resubscribe to all registered topics */
                 for (size_t i = 0; i < s_mqtt_sub_count; i++) {
                     mqtt_subscribe_remote(s_mqtt_subs[i].topic);
+                    vTaskDelay(pdMS_TO_TICKS(20));
                 }
             } else {
-                ESP_LOGW(TAG, "CONNACK rejected or timed out");
+                ESP_LOGW(TAG, "CONNACK rejected or timed out (n=%d)", n);
                 close(s);
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 continue;
             }
         }
 
-        /* Read incoming frames */
-        int r = recv(s_mqtt_sock, s_mqtt_rx_buf, sizeof(s_mqtt_rx_buf) - 1, 0);
-        if (r > 0) {
-            s_mqtt_rx_buf[r] = '\0';
-            uint8_t pkt_type = s_mqtt_rx_buf[0] & 0xF0;
-            if (pkt_type == 0x30) { /* PUBLISH */
-                /* Decode remaining length (variable length integer, 1-4 bytes) */
-                size_t idx = 1;
-                uint32_t rem_len = 0;
-                uint32_t multiplier = 1;
-                uint8_t encoded_byte = 0;
-                do {
-                    if (idx >= (size_t)r) break;
-                    encoded_byte = s_mqtt_rx_buf[idx++];
-                    rem_len += (encoded_byte & 0x7F) * multiplier;
-                    multiplier *= 128;
-                } while ((encoded_byte & 0x80) != 0 && idx <= 4);
-
-                /* Drain rest of packet from socket if split across TCP reads */
-                size_t total_needed = idx + rem_len;
-                while ((size_t)r < total_needed && (size_t)r < sizeof(s_mqtt_rx_buf) - 1) {
-                    int extra = recv(s_mqtt_sock, s_mqtt_rx_buf + r, sizeof(s_mqtt_rx_buf) - 1 - r, 0);
-                    if (extra <= 0) break;
-                    r += extra;
-                    s_mqtt_rx_buf[r] = '\0';
-                }
-
-                /* Variable header: topic length (2 bytes) */
-                if (idx + 2 <= (size_t)r) {
-                    uint16_t tlen = ((uint16_t)s_mqtt_rx_buf[idx] << 8) | s_mqtt_rx_buf[idx + 1];
-                    idx += 2;
-                    if (idx + tlen <= (size_t)r) {
-                        char topic[64];
-                        size_t cpy_tlen = (tlen < sizeof(topic) - 1) ? tlen : (sizeof(topic) - 1);
-                        memcpy(topic, &s_mqtt_rx_buf[idx], cpy_tlen);
-                        topic[cpy_tlen] = '\0';
-                        idx += tlen;
-
-                        /* If QoS > 0, 2-byte Packet Identifier follows */
-                        uint8_t qos = (s_mqtt_rx_buf[0] & 0x06) >> 1;
-                        if (qos > 0 && idx + 2 <= (size_t)r) {
-                            idx += 2;
-                        }
-
-                        size_t payload_len = (idx <= (size_t)r) ? ((size_t)r - idx) : 0;
-                        size_t cpy_plen = (payload_len < sizeof(s_mqtt_rx_payload) - 1) ? payload_len : (sizeof(s_mqtt_rx_payload) - 1);
-                        if (cpy_plen > 0) {
-                            memcpy(s_mqtt_rx_payload, &s_mqtt_rx_buf[idx], cpy_plen);
-                        }
-                        s_mqtt_rx_payload[cpy_plen] = '\0';
-
-                        ESP_LOGI(TAG, "MQTT Rx: topic='%s' payload_len=%u", topic, (unsigned)cpy_plen);
-                        mqtt_dispatch_publish(topic, s_mqtt_rx_payload);
-                    }
-                }
-            } else if (pkt_type == 0x90) {
-                ESP_LOGD(TAG, "SUBACK received from broker");
+        /* Periodic Keep-Alive PINGREQ every 20 seconds */
+        int64_t now_sec = (int64_t)(esp_timer_get_time() / 1000000ULL);
+        if (s_mqtt_connected && (now_sec - s_last_ping_sec >= 20)) {
+            s_last_ping_sec = now_sec;
+            const uint8_t ping_pkt[2] = { 0xC0, 0x00 };
+            if (mqtt_send_bytes(ping_pkt, 2) != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to send MQTT PINGREQ, resetting connection");
+                close(s_mqtt_sock);
+                s_mqtt_sock = -1;
+                s_mqtt_connected = false;
+                s_rx_buf_len = 0;
+                cocis_sync_event_clear(COCIS_EVT_MQTT_CONNECTED);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
             }
-        } else if (r == 0) {
-            ESP_LOGW(TAG, "Broker closed connection");
+        }
+
+        /* Read incoming frames into stream buffer */
+        int r = recv(s_mqtt_sock, s_mqtt_rx_buf + s_rx_buf_len, sizeof(s_mqtt_rx_buf) - 1 - s_rx_buf_len, 0);
+        if (r > 0) {
+            s_rx_buf_len += (size_t)r;
+            s_mqtt_rx_buf[s_rx_buf_len] = '\0';
+        } else if (r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+            ESP_LOGW(TAG, "MQTT connection lost (r=%d, errno=%d), reconnecting...", r, errno);
             close(s_mqtt_sock);
             s_mqtt_sock = -1;
             s_mqtt_connected = false;
+            s_rx_buf_len = 0;
             cocis_sync_event_clear(COCIS_EVT_MQTT_CONNECTED);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(50));
+        /* Process all complete packets in the buffer */
+        while (s_rx_buf_len >= 2) {
+            uint8_t pkt_type = s_mqtt_rx_buf[0] & 0xF0;
+
+            /* Decode remaining length */
+            size_t idx = 1;
+            uint32_t rem_len = 0;
+            uint32_t multiplier = 1;
+            bool rem_len_complete = false;
+
+            while (idx < s_rx_buf_len && idx <= 4) {
+                uint8_t b = s_mqtt_rx_buf[idx++];
+                rem_len += (uint32_t)(b & 0x7F) * multiplier;
+                multiplier *= 128;
+                if ((b & 0x80) == 0) {
+                    rem_len_complete = true;
+                    break;
+                }
+            }
+
+            if (!rem_len_complete) {
+                break; /* Length not fully received yet */
+            }
+
+            size_t total_pkt_len = idx + rem_len;
+            if (s_rx_buf_len < total_pkt_len) {
+                break; /* Packet body not fully received yet */
+            }
+
+            if (pkt_type == 0x30) { /* PUBLISH */
+                size_t v_idx = idx;
+                if (v_idx + 2 <= total_pkt_len) {
+                    uint16_t tlen = ((uint16_t)s_mqtt_rx_buf[v_idx] << 8) | s_mqtt_rx_buf[v_idx + 1];
+                    v_idx += 2;
+                    if (v_idx + tlen <= total_pkt_len) {
+                        char topic[64];
+                        size_t cpy_tlen = (tlen < sizeof(topic) - 1) ? tlen : (sizeof(topic) - 1);
+                        memcpy(topic, &s_mqtt_rx_buf[v_idx], cpy_tlen);
+                        topic[cpy_tlen] = '\0';
+                        v_idx += tlen;
+
+                        uint8_t qos = (s_mqtt_rx_buf[0] & 0x06) >> 1;
+                        if (qos > 0 && v_idx + 2 <= total_pkt_len) {
+                            v_idx += 2; /* Skip Packet ID */
+                        }
+
+                        size_t payload_len = (total_pkt_len > v_idx) ? (total_pkt_len - v_idx) : 0;
+                        char rx_payload[512];
+                        size_t cpy_plen = (payload_len < sizeof(rx_payload) - 1) ? payload_len : (sizeof(rx_payload) - 1);
+                        if (cpy_plen > 0) {
+                            memcpy(rx_payload, &s_mqtt_rx_buf[v_idx], cpy_plen);
+                        }
+                        rx_payload[cpy_plen] = '\0';
+
+                        ESP_LOGI(TAG, "MQTT Rx: topic='%s' payload_len=%u", topic, (unsigned)cpy_plen);
+                        mqtt_dispatch_publish(topic, rx_payload);
+                    }
+                }
+            } else if (pkt_type == 0x90) { /* SUBACK */
+                ESP_LOGD(TAG, "SUBACK received from broker");
+            } else if (pkt_type == 0xD0) { /* PINGRESP */
+                ESP_LOGD(TAG, "PINGRESP received from broker");
+            }
+
+            /* Shift buffer forward past the consumed packet */
+            size_t remaining = s_rx_buf_len - total_pkt_len;
+            if (remaining > 0) {
+                memmove(s_mqtt_rx_buf, s_mqtt_rx_buf + total_pkt_len, remaining);
+            }
+            s_rx_buf_len = remaining;
+        }
+
+        if (s_rx_buf_len >= sizeof(s_mqtt_rx_buf) - 1) {
+            ESP_LOGW(TAG, "RX buffer overflow, resetting stream buffer");
+            s_rx_buf_len = 0;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(30));
     }
 }
 
@@ -4845,6 +4897,8 @@ static void on_room_telemetry(const char *topic, const char *payload)
     cocis_health_record_rx(pkt.src_node, pkt.seq_id, pkt.uptime_sec, -55);
 
     if (pkt.msg_type == PROTO_MSG_HEARTBEAT) {
+        ESP_LOGI(TAG, "Heartbeat RX: Room Node %u [OCC=%u LGT=%u] (seq=%lu)",
+                 (unsigned)pkt.src_node, (unsigned)pkt.occupied, (unsigned)pkt.light_state, (unsigned long)pkt.seq_id);
         return;
     }
 
@@ -4914,13 +4968,9 @@ esp_err_t net_protocol_init(void)
     s_proto_rooms[2].name = "Lecture Room 2";
     s_proto_rooms[2].heartbeat_healthy = false;
 
-    /* Subscribe to all room telemetry topics (both explicit and wildcard) */
-    char sub_pattern[64], sub_r1[64], sub_r2[64];
+    /* Subscribe to all room telemetry topics via wildcard pattern */
+    char sub_pattern[64];
     snprintf(sub_pattern, sizeof(sub_pattern), "%s/room/+/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    snprintf(sub_r1, sizeof(sub_r1), "%s/room/1/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    snprintf(sub_r2, sizeof(sub_r2), "%s/room/2/telemetry", CFG_MQTT_TOPIC_PREFIX);
-    cocis_mqtt_subscribe(sub_r1, on_room_telemetry);
-    cocis_mqtt_subscribe(sub_r2, on_room_telemetry);
     cocis_mqtt_subscribe(sub_pattern, on_room_telemetry);
 
     s_net_proto_initialized = true;
@@ -5028,7 +5078,7 @@ esp_err_t net_protocol_get_status(node_id_t node_id, node_net_status_t *out_stat
     } else {
         out_status->name = (node_id == NODE_ID_ROOM_1) ? "Lecture Room 1" : "Lecture Room 2";
         out_status->heartbeat_healthy = s_proto_rooms[node_id].heartbeat_healthy;
-        out_status->link_simulated_online = true;
+        out_status->link_simulated_online = s_proto_rooms[node_id].heartbeat_healthy;
         out_status->last_rx_seq = s_proto_rooms[node_id].last_rx_seq;
         out_status->acked_count = s_proto_rooms[node_id].acked_count;
         out_status->dup_suppressed_count = s_proto_rooms[node_id].dup_suppressed_count;
@@ -6094,6 +6144,20 @@ void loop(void)
 {
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+void __attribute__((weak)) app_main(void)
+{
+    setup();
+    while (1) {
+        loop();
+    }
+}
+#ifdef __cplusplus
+}
+#endif
 
 #ifndef __cplusplus
 /* Export C++ mangled symbols expected by Arduino main.cpp when compiled with C compiler */

@@ -5248,10 +5248,10 @@ esp_err_t cli_init(void)
 }
 
 /* ============================================================================== */
-/* 5. MASTER APPLICATION ENTRY POINT (app_main)                                   */
+/* 5. MASTER APPLICATION ENTRY POINT (setup / loop / app_main)                    */
 /* ============================================================================== */
 
-void app_main(void)
+void setup(void)
 {
     ESP_LOGI(TAG, "==============================================================================");
     ESP_LOGI(TAG, "  CoCIS Smart Control System (%s)", CFG_FIRMWARE_VERSION);
@@ -5293,3 +5293,19 @@ void app_main(void)
     logger_log_audit("SYSTEM", "BOOT_COMPLETE", "All 21 CoCIS subsystems running in unified main.c");
     ESP_LOGI(TAG, "All subsystems successfully initialized. System operational.");
 }
+
+void loop(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+#ifndef ARDUINO
+/* Fallback entry point for native ESP-IDF toolchains without Arduino core */
+void __attribute__((weak)) app_main(void)
+{
+    setup();
+    while (1) {
+        loop();
+    }
+}
+#endif

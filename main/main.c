@@ -636,8 +636,10 @@ esp_err_t cli_init(void);
 esp_err_t cli_execute_line(char *line);
 
 /* ============================================================================== */
-/* 3. COMMON UTILITY FUNCTIONS                                                   */
+/* 3. COMMON UTILITY FUNCTIONS & LOGGING TAG                                     */
 /* ============================================================================== */
+
+static const char *TAG = "COCIS";
 
 static int64_t uptime_sec(void)
 {
@@ -651,7 +653,6 @@ static int64_t uptime_sec(void)
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 1: board_pins.c [BOARD_PINS] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "BOARD_PINS"
 esp_err_t board_pins_init(void)
 {
     uint64_t out_mask = (1ULL << PIN_LED_ENTRY)   |
@@ -688,12 +689,10 @@ esp_err_t board_pins_init(void)
     ESP_LOGI(TAG, "Board GPIO outputs and ISR service initialized");
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 2: sync.c [SYNC] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "SYNC"
 static SemaphoreHandle_t s_mutexes[LOCK_LEVEL_COUNT] = { NULL };
 static EventGroupHandle_t s_sys_events = NULL;
 static uint32_t s_acquire_counts[LOCK_LEVEL_COUNT] = { 0 };
@@ -804,12 +803,10 @@ esp_err_t sync_get_stats(sync_lock_level_t level, sync_lock_stats_t *out_stats)
     out_stats->timeout_count = s_timeout_counts[level];
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 3: config.c [CONFIG] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "CONFIG"
 static const char *NVS_KEY_BLOB = "sys_cfg_v1";
 
 static sys_config_t s_config;
@@ -906,12 +903,10 @@ esp_err_t config_reset_defaults(void)
     load_compiled_defaults(&def);
     return config_set(&def);
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 4: time_sync.c [TIME_SYNC] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "TIME_SYNC"
 static bool s_time_valid = false;
 static bool s_sntp_started = false;
 static bool s_sntp_synced = false;
@@ -1051,12 +1046,10 @@ bool time_sync_is_valid(void)
     time_sync_get_now(&now);
     return now.time_valid;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 5: storage_sd.c [STORAGE_SD] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "STORAGE_SD"
 static bool s_mounted = false;
 static sdmmc_card_t *s_card = NULL;
 static uint32_t s_write_ok = 0;
@@ -1265,12 +1258,10 @@ esp_err_t storage_sd_get_status(sd_status_t *out_status)
     sync_unlock(LOCK_LEVEL_SD);
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 6: logger.c [LOGGER] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "LOGGER"
 static QueueHandle_t s_log_queue = NULL;
 static log_entry_t   s_ring[CFG_LOG_RAM_RING_CAP];
 static size_t        s_ring_head = 0;
@@ -1523,12 +1514,10 @@ void logger_flush_sync(uint32_t wait_ms)
         elapsed += 10;
     }
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 7: user_db.c [USER_DB] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "USER_DB"
 static const char *NVS_KEY_USERS = "users_v1";
 
 static user_record_t s_users[CFG_USER_DB_MAX_USERS];
@@ -1815,12 +1804,10 @@ bool user_db_parse_role(const char *str, user_role_t *out_role)
     }
     return false;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 8: schedule.c [SCHEDULE] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "SCHEDULE"
 static const char *NVS_KEY_SCHED = "sched_v1";
 
 static weekly_schedule_t s_schedule;
@@ -2126,12 +2113,10 @@ const char *schedule_decision_to_str(schedule_decision_t dec)
         default:                                  return "DENY_SCHEDULE";
     }
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 9: occupancy_ledger.c [OCC_LEDGER] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "OCC_LEDGER"
 static occupant_record_t s_records[CFG_USER_DB_MAX_USERS];
 static occupancy_stats_t s_occ_stats = { 0 };
 
@@ -2400,12 +2385,10 @@ esp_err_t occupancy_ledger_clear_all(void)
     sync_unlock(LOCK_LEVEL_LEDGER);
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 10: auth.c [AUTH] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "AUTH"
 static const char *NVS_KEY_CRED = "auth_cred_v1";
 
 typedef struct {
@@ -2642,12 +2625,10 @@ esp_err_t auth_reset_lockout(void)
     s_lockout_until_sec = 0;
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 11: buzzer.c [BUZZER] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "BUZZER"
 static QueueHandle_t s_buzzer_queue = NULL;
 
 static void tone_burst(uint32_t freq_hz, uint32_t duration_ms)
@@ -2753,12 +2734,10 @@ esp_err_t buzzer_play(buzzer_pattern_t pattern)
     xQueueSend(s_buzzer_queue, &pattern, 0);
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 12: door.c [DOOR] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "DOOR"
 /* 50 Hz servo (20 ms period) with 13-bit duty (8192 steps):
  * 0 deg (~1.0 ms pulse) = 8192 * (1.0 / 20.0) = 410
  * 90 deg (~1.5 ms pulse) = 8192 * (1.5 / 20.0) = 614
@@ -2955,12 +2934,10 @@ const char *door_state_to_str(door_state_t state)
         default:                        return "UNKNOWN";
     }
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 13: rfid.c [RFID] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "RFID"
 static QueueHandle_t              s_btn_isr_queue = NULL;
 static rfid_scan_callback_t       s_scan_cb = NULL;
 static rfid_emergency_button_cb_t s_emerg_cb = NULL;
@@ -3094,12 +3071,10 @@ esp_err_t rfid_inject_scan(rfid_reader_t reader, const char *uid)
     }
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 14: display.c [DISPLAY] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "DISPLAY"
 #define LCD_BACKLIGHT 0x08
 #define LCD_ENABLE    0x04
 #define LCD_RS_DATA   0x01
@@ -3281,12 +3256,10 @@ esp_err_t display_show_alert(const char *line0, const char *line1, uint32_t dura
     sync_unlock(LOCK_LEVEL_DISPLAY);
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 15: pir_sensor.c [PIR_SENSOR] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "PIR_SENSOR"
 typedef struct {
     uint8_t room_id;
     bool    level;
@@ -3394,12 +3367,10 @@ bool pir_sensor_get_state(uint8_t room_id)
     }
     return s_last_state[room_id - 1];
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 16: light.c [LIGHT] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "LIGHT"
 static room_light_status_t s_rooms[CFG_ROOM_COUNT];
 
 static void set_room_relay_hw(uint8_t room_id, bool on)
@@ -3579,12 +3550,10 @@ const char *light_fsm_to_str(light_fsm_state_t state)
         default:                      return "UNKNOWN";
     }
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 17: access_control.c [ACCESS_CTRL] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "ACCESS_CTRL"
 static QueueHandle_t  s_scan_queue = NULL;
 static access_stats_t s_access_stats = { 0 };
 
@@ -3825,12 +3794,10 @@ const char *access_control_result_to_str(access_result_t res)
         default:                                     return "UNKNOWN";
     }
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 18: net_wifi.c [NET_WIFI] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "NET_WIFI"
 static bool          s_connected = false;
 static char          s_ip_str[16] = "0.0.0.0";
 static uint32_t      s_reconnects = 0;
@@ -3944,12 +3911,10 @@ esp_err_t net_wifi_get_status(wifi_status_t *out_status)
     }
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 19: net_protocol.c [NET_PROTO] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "NET_PROTO"
 typedef struct {
     proto_packet_t ring[CFG_PROTO_STORE_FWD_CAP];
     size_t         head;
@@ -4304,12 +4269,10 @@ bool net_protocol_is_mqtt_connected(void)
 {
     return s_mqtt_connected;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 20: health.c [HEALTH] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "HEALTH"
 static uint32_t     s_wdt_feeds = 0;
 static uint32_t     s_node_alerts = 0;
 static TaskHandle_t s_health_task_handle = NULL;
@@ -4386,12 +4349,10 @@ esp_err_t health_get_summary(health_summary_t *out_summary)
     out_summary->node_timeout_alerts = s_node_alerts;
     return ESP_OK;
 }
-#undef TAG
 
 /* ------------------------------------------------------------------------------ */
 /* Subsystem 21: cli.c [CLI] */
 /* ------------------------------------------------------------------------------ */
-#define TAG "CLI"
 static void print_prompt(void)
 {
     printf("\n%s", auth_is_logged_in() ? "cocis(admin)# " : "cocis> ");
@@ -5285,13 +5246,10 @@ esp_err_t cli_init(void)
     ESP_LOGI(TAG, "Interactive UART0 management CLI initialized");
     return ESP_OK;
 }
-#undef TAG
 
 /* ============================================================================== */
 /* 5. MASTER APPLICATION ENTRY POINT (app_main)                                   */
 /* ============================================================================== */
-
-#define TAG "MAIN"
 
 void app_main(void)
 {
@@ -5335,5 +5293,3 @@ void app_main(void)
     logger_log_audit("SYSTEM", "BOOT_COMPLETE", "All 21 CoCIS subsystems running in unified main.c");
     ESP_LOGI(TAG, "All subsystems successfully initialized. System operational.");
 }
-
-#undef TAG

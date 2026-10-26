@@ -3600,7 +3600,7 @@ esp_err_t display_show_alert(const char *line0, const char *line1, uint32_t dura
 
 
 static QueueHandle_t  s_scan_queue = NULL;
-static access_access_stats_t s_access_stats = { 0 };
+static access_stats_t s_access_stats = { 0 };
 
 static access_result_t process_scan_event(const rfid_scan_event_t *evt)
 {
@@ -3812,7 +3812,7 @@ access_result_t access_control_evaluate_sync(rfid_reader_t reader, const char *u
     return process_scan_event(&evt);
 }
 
-esp_err_t access_control_get_stats(access_access_stats_t *out_stats)
+esp_err_t access_control_get_stats(access_stats_t *out_stats)
 {
     if (out_stats == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -4214,15 +4214,15 @@ const node_net_status_t *cocis_health_get_status(node_id_t node_id)
 /* ------------------------------------------------------------------------------ */
 
 
-static uint32_t s_next_seq[NODE_ID_COUNT] = { 1, 1, 1 };
-static uint32_t s_last_seen_seq[NODE_ID_COUNT] = { 0, 0, 0 };
+static uint32_t s_proto_next_seq[NODE_ID_COUNT] = { 1, 1, 1 };
+static uint32_t s_proto_last_seen_seq[NODE_ID_COUNT] = { 0, 0, 0 };
 
 esp_err_t cocis_proto_init(void)
 {
     cocis_crypto_init();
     for (int i = 0; i < NODE_ID_COUNT; i++) {
-        s_next_seq[i] = 1;
-        s_last_seen_seq[i] = 0;
+        s_proto_next_seq[i] = 1;
+        s_proto_last_seen_seq[i] = 0;
     }
     ESP_LOGI(TAG, "Protocol engine initialized with HMAC-SHA256 support");
     return ESP_OK;
@@ -4233,7 +4233,7 @@ uint32_t cocis_proto_next_seq(node_id_t my_node_id)
     if (my_node_id >= NODE_ID_COUNT) {
         return 0;
     }
-    uint32_t seq = s_next_seq[my_node_id]++;
+    uint32_t seq = s_proto_next_seq[my_node_id]++;
     return seq;
 }
 
@@ -4360,13 +4360,13 @@ bool cocis_proto_is_duplicate(node_id_t src_node, uint32_t seq_id)
     if (src_node >= NODE_ID_COUNT) {
         return false;
     }
-    return (seq_id <= s_last_seen_seq[src_node]);
+    return (seq_id <= s_proto_last_seen_seq[src_node]);
 }
 
 void cocis_proto_record_seq(node_id_t src_node, uint32_t seq_id)
 {
-    if (src_node < NODE_ID_COUNT && seq_id > s_last_seen_seq[src_node]) {
-        s_last_seen_seq[src_node] = seq_id;
+    if (src_node < NODE_ID_COUNT && seq_id > s_proto_last_seen_seq[src_node]) {
+        s_proto_last_seen_seq[src_node] = seq_id;
     }
 }
 
@@ -4441,7 +4441,7 @@ esp_err_t cocis_wifi_init(void)
     return ESP_OK;
 }
 
-bool cocis_wifi_is_wifi_connected(void)
+bool cocis_wifi_is_connected(void)
 {
     return s_wifi_connected;
 }
@@ -4583,7 +4583,7 @@ static void mqtt_task(void *arg)
     (void)arg;
 
     while (1) {
-        if (!cocis_wifi_is_mqtt_connected()) {
+        if (!cocis_wifi_is_connected()) {
             if (s_mqtt_sock >= 0) {
                 close(s_mqtt_sock);
                 s_mqtt_sock = -1;
@@ -4749,7 +4749,7 @@ esp_err_t cocis_mqtt_init(node_id_t my_node_id)
     return ESP_OK;
 }
 
-bool cocis_mqtt_is_mqtt_connected(void)
+bool cocis_mqtt_is_connected(void)
 {
     return s_mqtt_connected;
 }

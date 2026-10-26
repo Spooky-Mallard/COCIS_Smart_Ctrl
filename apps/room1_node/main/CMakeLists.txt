@@ -1,10 +1,6 @@
 idf_component_register(
     SRCS
         "main.c"
-        "src/pir_sensor.c"
-        "src/light.c"
-        "src/room_buffer.c"
-        "src/room_cli.c"
     INCLUDE_DIRS
         "include"
     REQUIRES

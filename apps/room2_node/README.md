@@ -12,7 +12,7 @@
 The **Lecture Room 2 Terminal** is structurally and logically equivalent to Room 1, controlling Lecture Room 2 in the CoCIS facility:
 1. **Dedicated Peripherals**: Monitored by its own PIR sensor on `GPIO 26` and lighting relay on `GPIO 25`.
 2. **Autonomous Edge Operation**: Senses motion, drives the 3-state lighting finite state machine (`OFF_VACANT`, `ON_ACTIVE`, `ON_GRACE_HOLD`), and controls illumination without reliance on the network or central coordinator.
-3. **Telemetry & Synchronization**: Publishes HMAC-SHA256 authenticated telemetry frames to MQTT topic `cocis/smart_ctrl_mak/hub/ingress` and listens on `cocis/smart_ctrl_mak/room2/command` for supervisor lighting overrides.
+3. **Telemetry & Synchronization**: Publishes HMAC-SHA256 authenticated telemetry frames to MQTT topic `cocis/smart_ctrl_mak/room/2/telemetry` and listens on `cocis/smart_ctrl_mak/room/2/control` for supervisor lighting overrides and ACKs.
 4. **Resilient Buffering**: Maintains its own 32-entry circular FIFO ring buffer (`room_buffer.c`) to survive hub or network dropouts with zero telemetry loss.
 
 ---

@@ -1,25 +1,6 @@
 idf_component_register(
     SRCS
         "main.c"
-        "src/access_control.c"
-        "src/auth.c"
-        "src/board_pins.c"
-        "src/buzzer.c"
-        "src/cli.c"
-        "src/config.c"
-        "src/display.c"
-        "src/door.c"
-        "src/light.c"
-        "src/logger.c"
-        "src/net_protocol.c"
-        "src/occupancy_ledger.c"
-        "src/pir_sensor.c"
-        "src/rfid.c"
-        "src/schedule.c"
-        "src/storage_sd.c"
-        "src/sync.c"
-        "src/time_sync.c"
-        "src/user_db.c"
     INCLUDE_DIRS
         "include"
     REQUIRES

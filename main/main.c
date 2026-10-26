@@ -5298,3 +5298,16 @@ void loop(void)
 {
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
+
+#ifndef __cplusplus
+/* Export C++ mangled symbols expected by Arduino main.cpp when compiled with C compiler */
+void _Z5setupv(void)
+{
+    setup();
+}
+
+void _Z4loopv(void)
+{
+    loop();
+}
+#endif
